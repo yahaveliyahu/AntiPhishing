@@ -36,7 +36,15 @@ Build a system that provides **Proactive Protection**:
 
   ---
 
-## Algorithm & Architecture
+  ## General Architecture Flowchart
+
+<p align="center">
+  <img src="diagram.jpg" alt="AntiPhishing general architecture flowchart" width="850" />
+</p>
+
+---
+
+## Algorithm
 
 The system operates using a multi-layered pipeline to analyze and classify URLs in real time, in order to protect the user from phishing and other threats. The algorithm flow process is as follows:
 
@@ -82,3 +90,45 @@ The features are fed into a pre-trained machine learning model. The model return
 - **Risk score above 80:** The link is defined as dangerous. The system blocks access and displays a security alert to the user with an explanation of the nature of the threat.
 
 - **Otherwise:** The link is defined as safe and the system allows it to be opened in the browser.
+
+---
+
+## Architecture
+
+**Android App**
+- Intent Filter interception
+- URL normalization & feature extraction
+- Local scoring + UI warning screen
+- History/logs + statistics
+
+
+**Backend**
+- REST API endpoint for URL scoring
+- Feature enrichment (e.g., hostname reputation, WHOIS/domain age if implemented)
+- ML model inference + thresholding
+- Logging/storage
+
+---
+
+## Research / References
+
+The project relies on a review of Blacklist, Heuristics and ML approaches to identify Phishing URLs, including the use of WHOIS information and feature combinations.
+
+---
+
+## Tech Stack
+
+- **Android**: Kotlin, Intent Filters, UI for warnings/logs
+- **Backend**: Flask
+- **ML**: URL phishing classification using engineered features (lexical + host-based)
+- **Storage**: mongoDB for history and caching
+
+---
+
+## Credits
+
+Project by:
+
+- Yahav Eliyahu
+
+- Ron Golan
