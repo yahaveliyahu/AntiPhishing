@@ -36,8 +36,6 @@ Build a system that provides **Proactive Protection**:
 
   ---
 
-  ## General Architecture Flowchart
-
 <p align="center">
   <img src="diagram.jpg" alt="AntiPhishing general architecture flowchart" width="850" />
 </p>
