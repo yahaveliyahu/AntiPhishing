@@ -4,57 +4,95 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Text
+import androidx.appcompat.app.AppCompatDelegate
+import androidx.compose.foundation.layout.*
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Language
+import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.core.os.LocaleListCompat
 import ronyahav.antiphishing.core.ui.AntiPhishingTheme
+import ronyahav.antiphishing.core.ui.SecurityShield
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-
         enableEdgeToEdge()
-
         setContent {
             AntiPhishingTheme {
-                MainContent()
+                MainContent(onLanguageToggle = { toggleLanguage() })
             }
         }
     }
+
+    private fun toggleLanguage() {
+        val currentLocale = AppCompatDelegate.getApplicationLocales()[0]?.language
+        val newLocale = if (currentLocale == "he") "en" else "he"
+        val appLocale: LocaleListCompat = LocaleListCompat.forLanguageTags(newLocale)
+        AppCompatDelegate.setApplicationLocales(appLocale)
+    }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun MainContent() {
+fun MainContent(onLanguageToggle: () -> Unit) {
     Scaffold(
-        modifier = Modifier.fillMaxSize(),
-        containerColor = MaterialTheme.colorScheme.background
+        topBar = {
+            CenterAlignedTopAppBar(
+                title = { Text(stringResource(R.string.app_name)) },
+                actions = {
+                    IconButton(onClick = onLanguageToggle) {
+                        Icon(Icons.Default.Language, contentDescription = "Toggle Language")
+                    }
+                }
+            )
+        },
+        modifier = Modifier.fillMaxSize()
     ) { innerPadding ->
-        Column(
+        Box(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(innerPadding)
-                .padding(16.dp)
+                .padding(innerPadding),
+            contentAlignment = Alignment.Center
         ) {
-            // Fetching strings from resources automatically based on locale
-            Text(
-                text = stringResource(id = R.string.hello_world),
-                style = MaterialTheme.typography.displayMedium,
-                color = MaterialTheme.colorScheme.primary
-            )
+            ElevatedCard(
+                modifier = Modifier
+                    .padding(24.dp)
+                    .fillMaxWidth(),
+                shape = MaterialTheme.shapes.extraLarge,
+                colors = CardDefaults.elevatedCardColors(
+                    containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                )
+            ) {
+                Column(
+                    modifier = Modifier.padding(32.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    SecurityShield()
 
-            Text(
-                text = stringResource(id = R.string.welcome_message),
-                style = MaterialTheme.typography.bodyLarge,
-                color = MaterialTheme.colorScheme.onBackground,
-                modifier = Modifier.padding(top = 8.dp)
-            )
+                    Spacer(modifier = Modifier.height(24.dp))
+
+                    Text(
+                        text = stringResource(id = R.string.hello_world),
+                        style = MaterialTheme.typography.headlineMedium,
+                        color = MaterialTheme.colorScheme.primary,
+                        textAlign = TextAlign.Center
+                    )
+
+                    Text(
+                        text = stringResource(id = R.string.welcome_message),
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.padding(top = 12.dp)
+                    )
+                }
+            }
         }
     }
 }

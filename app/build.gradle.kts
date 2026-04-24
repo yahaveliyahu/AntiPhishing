@@ -50,18 +50,22 @@ android {
 }
 
 dependencies {
-    // Import the UI module we created
+    // Import the UI module
     implementation(project(":core:ui"))
 
-    // Core AndroidX and Compose
+    // Core AndroidX and AppCompat
     implementation(libs.androidx.core.ktx)
+    implementation(libs.androidx.appcompat)
     implementation(libs.androidx.lifecycle.runtime.ktx)
+
+    // Compose
     implementation(libs.androidx.activity.compose)
     implementation(platform(libs.androidx.compose.bom))
     implementation(libs.androidx.ui)
     implementation(libs.androidx.ui.graphics)
     implementation(libs.androidx.ui.tooling.preview)
     implementation(libs.androidx.material3)
+    implementation(libs.androidx.material.icons.extended)
     implementation(libs.androidx.navigation.compose)
 
     // Hilt and Room with KSP
