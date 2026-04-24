@@ -3,7 +3,7 @@ plugins {
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.compose.compiler)
     alias(libs.plugins.hilt.android)
-    kotlin("kapt") // Required for Hilt annotation processing
+    alias(libs.plugins.ksp)
 }
 
 android {
@@ -65,12 +65,12 @@ dependencies {
 
     // Hilt (Dependency Injection)
     implementation(libs.hilt.android)
-    kapt(libs.hilt.compiler)
+    ksp(libs.hilt.compiler)
 
     // Room (Database)
     implementation(libs.room.runtime)
     implementation(libs.room.ktx)
-    kapt(libs.room.compiler) // Changed to kapt for better compatibility with Hilt
+    ksp(libs.room.compiler)
 
     // Testing
     testImplementation(libs.junit)
