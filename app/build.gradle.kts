@@ -50,12 +50,13 @@ android {
 }
 
 dependencies {
-    // Core and Lifecycle
+    // Import the UI module we created
+    implementation(project(":core:ui"))
+
+    // Core AndroidX and Compose
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
     implementation(libs.androidx.activity.compose)
-
-    // Compose
     implementation(platform(libs.androidx.compose.bom))
     implementation(libs.androidx.ui)
     implementation(libs.androidx.ui.graphics)
@@ -63,13 +64,9 @@ dependencies {
     implementation(libs.androidx.material3)
     implementation(libs.androidx.navigation.compose)
 
-    // Hilt (Dependency Injection)
+    // Hilt and Room with KSP
     implementation(libs.hilt.android)
     ksp(libs.hilt.compiler)
-
-    implementation(project(":core:ui"))
-
-    // Room (Database)
     implementation(libs.room.runtime)
     implementation(libs.room.ktx)
     ksp(libs.room.compiler)
