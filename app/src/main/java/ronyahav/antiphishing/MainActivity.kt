@@ -1,9 +1,9 @@
 package ronyahav.antiphishing
 
 import android.os.Bundle
-import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.app.AppCompatDelegate
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
@@ -18,11 +18,15 @@ import androidx.compose.ui.unit.dp
 import androidx.core.os.LocaleListCompat
 import ronyahav.antiphishing.core.ui.AntiPhishingTheme
 import ronyahav.antiphishing.core.ui.SecurityShield
+import java.util.Locale
 
-class MainActivity : ComponentActivity() {
+class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
+        // Enabling modern edge-to-edge display
         enableEdgeToEdge()
+
         setContent {
             AntiPhishingTheme {
                 MainContent(onLanguageToggle = { toggleLanguage() })
@@ -30,11 +34,28 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    /**
+     * Logic to toggle between Hebrew and English.
+     * Uses AppCompatDelegate to persist language selection across restarts.
+     */
     private fun toggleLanguage() {
-        val currentLocale = AppCompatDelegate.getApplicationLocales()[0]?.language
-        val newLocale = if (currentLocale == "he") "en" else "he"
-        val appLocale: LocaleListCompat = LocaleListCompat.forLanguageTags(newLocale)
-        AppCompatDelegate.setApplicationLocales(appLocale)
+        // Get the current app-specific locales
+        val currentLocales = AppCompatDelegate.getApplicationLocales()
+
+        // Check current language: either from app settings or from system default
+        val currentLanguage = if (!currentLocales.isEmpty) {
+            currentLocales[0]?.language
+        } else {
+            Locale.getDefault().language
+        }
+
+        // Toggle logic
+        val newLocaleTag = if (currentLanguage == "he") "en" else "he"
+
+        // Apply the new locale list
+        AppCompatDelegate.setApplicationLocales(
+            LocaleListCompat.forLanguageTags(newLocaleTag)
+        )
     }
 }
 
@@ -47,7 +68,10 @@ fun MainContent(onLanguageToggle: () -> Unit) {
                 title = { Text(stringResource(R.string.app_name)) },
                 actions = {
                     IconButton(onClick = onLanguageToggle) {
-                        Icon(Icons.Default.Language, contentDescription = "Toggle Language")
+                        Icon(
+                            imageVector = Icons.Default.Language,
+                            contentDescription = "Change Language"
+                        )
                     }
                 }
             )
@@ -73,6 +97,7 @@ fun MainContent(onLanguageToggle: () -> Unit) {
                     modifier = Modifier.padding(32.dp),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
+                    // Animated shield component from core:ui module
                     SecurityShield()
 
                     Spacer(modifier = Modifier.height(24.dp))
