@@ -1,0 +1,5 @@
+<resources>
+    <string name="app_name">AntiPhishing</string>
+    <string name="hello_world">שלום עולם!</string>
+    <string name="welcome_message">ברוכים הבאים לעתיד של פיתוח אנדרואיד.</string>
+</resources>

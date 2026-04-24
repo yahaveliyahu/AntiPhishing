@@ -1,3 +1,5 @@
 <resources>
     <string name="app_name">AntiPhishing</string>
+    <string name="hello_world">Hello World!</string>
+    <string name="welcome_message">Welcome to the future of Android development.</string>
 </resources>
