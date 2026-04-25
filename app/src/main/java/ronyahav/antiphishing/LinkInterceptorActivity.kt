@@ -12,9 +12,20 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.ui.res.stringResource
+import androidx.lifecycle.lifecycleScope
+import dagger.hilt.android.EntryPointAccessors
+import dagger.hilt.android.AndroidEntryPoint
+import kotlinx.coroutines.launch
+import ronyahav.antiphishing.core.database.LinkDao
+import ronyahav.antiphishing.core.database.ScannedLink
 import ronyahav.antiphishing.core.ui.AntiPhishingTheme
+import javax.inject.Inject
 
+@AndroidEntryPoint
 class LinkInterceptorActivity : ComponentActivity() {
+
+    @Inject
+    lateinit var linkDao: LinkDao
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -42,6 +53,10 @@ class LinkInterceptorActivity : ComponentActivity() {
                         val scanMsg = stringResource(id = R.string.simulating_scan)
                         TextButton(onClick = {
                             Toast.makeText(this@LinkInterceptorActivity, scanMsg, Toast.LENGTH_SHORT).show()
+
+                            // Perform initial heuristic analysis and save to DB
+                            analyzeAndSave(url)
+
                             forwardToBrowser(url, prefs)
                             finish()
                         }) {
@@ -61,6 +76,27 @@ class LinkInterceptorActivity : ComponentActivity() {
         }
     }
 
+    private fun analyzeAndSave(url: String) {
+        lifecycleScope.launch {
+            // Simple heuristic check for PoC: if URL contains sensitive keywords, mark as suspicious
+            val suspiciousKeywords = listOf("login", "verify", "secure", "update", "bank", "free", "phish")
+            val isSuspicious = suspiciousKeywords.any { url.lowercase().contains(it) }
+
+            // Generate a dummy risk score
+            val dummyScore = if (isSuspicious) (70..100).random() else (0..30).random()
+
+            val linkEntry = ScannedLink(
+                url = url,
+                isSuspicious = isSuspicious,
+                riskScore = dummyScore,
+                threatType = if (isSuspicious) "Suspicious Keyword Detected" else null
+            )
+
+            // Uses our smart DAO logic: Keep Red links, FIFO (max 5) for Green links
+            linkDao.insertAndTrim(linkEntry)
+        }
+    }
+
     private fun forwardToBrowser(url: String, prefs: android.content.SharedPreferences) {
         val browserIntent = Intent(Intent.ACTION_VIEW, Uri.parse(url))
         var targetPackage = prefs.getString("target_browser", "com.android.chrome") ?: "com.android.chrome"
@@ -73,7 +109,6 @@ class LinkInterceptorActivity : ComponentActivity() {
         }
 
         if (!isInstalled) targetPackage = "com.android.chrome"
-
         browserIntent.setPackage(targetPackage)
         browserIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
 

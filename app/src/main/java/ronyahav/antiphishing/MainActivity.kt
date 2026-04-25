@@ -1,6 +1,5 @@
 package ronyahav.antiphishing
 
-import android.Manifest
 import android.app.role.RoleManager
 import android.content.Context
 import android.content.Intent
@@ -8,7 +7,6 @@ import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
-import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -16,27 +14,37 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.app.AppCompatDelegate
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Language
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.core.content.ContextCompat
 import androidx.core.os.LocaleListCompat
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
-import ronyahav.antiphishing.core.ui.AntiPhishingTheme
-import ronyahav.antiphishing.core.ui.SecurityShield
-import ronyahav.antiphishing.core.ui.TargetBrowserSelector
+import dagger.hilt.android.AndroidEntryPoint
+import kotlinx.coroutines.launch
+import ronyahav.antiphishing.core.database.LinkDao
+import ronyahav.antiphishing.core.ui.*
 import ronyahav.antiphishing.core.utils.BrowserUtils
-import java.util.Locale
+import java.util.*
 import java.util.concurrent.TimeUnit
+import javax.inject.Inject
 
+@AndroidEntryPoint
 class MainActivity : AppCompatActivity() {
+
+    @Inject
+    lateinit var linkDao: LinkDao
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
@@ -44,7 +52,8 @@ class MainActivity : AppCompatActivity() {
             AntiPhishingTheme {
                 MainContent(
                     onLanguageToggle = { toggleLanguage() },
-                    context = this
+                    context = this,
+                    linkDao = linkDao
                 )
             }
         }
@@ -52,11 +61,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun toggleLanguage() {
         val currentLocales = AppCompatDelegate.getApplicationLocales()
-        val currentLanguage = if (!currentLocales.isEmpty) {
-            currentLocales[0]?.language
-        } else {
-            Locale.getDefault().language
-        }
+        val currentLanguage = if (!currentLocales.isEmpty) currentLocales[0]?.language else Locale.getDefault().language
         val newLocaleTag = if (currentLanguage == "he") "en" else "he"
         AppCompatDelegate.setApplicationLocales(LocaleListCompat.forLanguageTags(newLocaleTag))
     }
@@ -64,44 +69,24 @@ class MainActivity : AppCompatActivity() {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun MainContent(onLanguageToggle: () -> Unit, context: Context) {
+fun MainContent(onLanguageToggle: () -> Unit, context: Context, linkDao: LinkDao) {
     val prefs = context.getSharedPreferences("AntiPhishingPrefs", Context.MODE_PRIVATE)
     var isProtectionActive by remember { mutableStateOf(prefs.getBoolean("is_active", false)) }
 
+    // Collecting flows from Room DB for live UI updates
+    val startOfDay = Calendar.getInstance().apply { set(Calendar.HOUR_OF_DAY, 0) }.timeInMillis
+    val todayCount by linkDao.getTodayScannedCount(startOfDay).collectAsState(initial = 0)
+    val blockedCount by linkDao.getBlockedThreatsCount().collectAsState(initial = 0)
+    val recentLinks by linkDao.getRecentLinks().collectAsState(initial = emptyList())
+
     val installedBrowsers = remember { BrowserUtils.getInstalledBrowsers(context) }
+    val scope = rememberCoroutineScope()
 
-    // Logic for tracking link successes
-    val successMsg = stringResource(id = R.string.tracking_active)
-    val failureMsg = stringResource(id = R.string.browser_role_required)
-    val deactivatedMsg = stringResource(id = R.string.protection_deactivated)
-
-    val roleLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.StartActivityForResult()
-    ) {
+    val roleLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) {
         val roleManager = context.getSystemService(Context.ROLE_SERVICE) as RoleManager
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q && roleManager.isRoleHeld(RoleManager.ROLE_BROWSER)) {
-            Toast.makeText(context, successMsg, Toast.LENGTH_SHORT).show()
             toggleSystemState(true, context, prefs)
             isProtectionActive = true
-        } else {
-            Toast.makeText(context, failureMsg, Toast.LENGTH_LONG).show()
-            isProtectionActive = false
-        }
-    }
-
-    val permissionLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.RequestPermission()
-    ) { isGranted ->
-        if (isGranted && Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            val roleManager = context.getSystemService(Context.ROLE_SERVICE) as RoleManager
-            if (!roleManager.isRoleHeld(RoleManager.ROLE_BROWSER)) {
-                saveCurrentDefaultBrowser(context, prefs)
-                val intent = roleManager.createRequestRoleIntent(RoleManager.ROLE_BROWSER)
-                roleLauncher.launch(intent)
-            } else {
-                toggleSystemState(true, context, prefs)
-                isProtectionActive = true
-            }
         }
     }
 
@@ -111,108 +96,106 @@ fun MainContent(onLanguageToggle: () -> Unit, context: Context) {
                 title = { Text(stringResource(R.string.app_name)) },
                 actions = {
                     IconButton(onClick = onLanguageToggle) {
-                        Icon(Icons.Default.Language, contentDescription = stringResource(id = R.string.change_language))
+                        Icon(Icons.Default.Language, contentDescription = null)
                     }
                 }
             )
         },
         modifier = Modifier.fillMaxSize()
     ) { innerPadding ->
-        Box(modifier = Modifier.fillMaxSize().padding(innerPadding), contentAlignment = Alignment.Center) {
-            ElevatedCard(
-                modifier = Modifier.padding(24.dp).fillMaxWidth(),
-                shape = MaterialTheme.shapes.extraLarge,
-                colors = CardDefaults.elevatedCardColors(
-                    containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+        LazyColumn(
+            modifier = Modifier.fillMaxSize().padding(innerPadding).padding(horizontal = 24.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            item {
+                Spacer(modifier = Modifier.height(16.dp))
+                SecurityShield()
+                Spacer(modifier = Modifier.height(16.dp))
+
+                Text(
+                    text = if (isProtectionActive) stringResource(R.string.hello_world) else stringResource(R.string.protection_disabled),
+                    style = MaterialTheme.typography.headlineSmall,
+                    color = if (isProtectionActive) MaterialTheme.colorScheme.primary else Color.Red
                 )
-            ) {
-                Column(
-                    modifier = Modifier.padding(32.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally
-                ) {
-                    SecurityShield()
-                    Spacer(modifier = Modifier.height(24.dp))
 
-                    Text(
-                        text = if (isProtectionActive) stringResource(id = R.string.hello_world) else stringResource(id = R.string.protection_disabled),
-                        style = MaterialTheme.typography.headlineMedium,
-                        color = if (isProtectionActive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
-                        textAlign = TextAlign.Center
-                    )
+                Spacer(modifier = Modifier.height(24.dp))
 
-                    Spacer(modifier = Modifier.height(32.dp))
+                // Stats Section
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                    StatCard(label = "Scanned Today", value = todayCount.toString(), color = MaterialTheme.colorScheme.primary, modifier = Modifier.weight(1f))
+                    StatCard(label = "Threats Blocked", value = blockedCount.toString(), color = Color.Red, modifier = Modifier.weight(1f))
+                }
 
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(stringResource(id = R.string.active_protection), style = MaterialTheme.typography.titleMedium)
-                        Spacer(modifier = Modifier.width(16.dp))
-                        Switch(
-                            checked = isProtectionActive,
-                            onCheckedChange = { isChecked ->
-                                if (isChecked) {
-                                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                                        val status = ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS)
-                                        if (status != PackageManager.PERMISSION_GRANTED) {
-                                            permissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
-                                            return@Switch
-                                        }
-                                    }
-                                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                                        val roleManager = context.getSystemService(Context.ROLE_SERVICE) as RoleManager
-                                        if (!roleManager.isRoleHeld(RoleManager.ROLE_BROWSER)) {
-                                            saveCurrentDefaultBrowser(context, prefs)
-                                            val intent = roleManager.createRequestRoleIntent(RoleManager.ROLE_BROWSER)
-                                            roleLauncher.launch(intent)
-                                            return@Switch
-                                        }
-                                    }
-                                    toggleSystemState(true, context, prefs)
-                                    isProtectionActive = true
-                                } else {
-                                    toggleSystemState(false, context, prefs)
-                                    isProtectionActive = false
-                                    Toast.makeText(context, deactivatedMsg, Toast.LENGTH_SHORT).show()
+                Spacer(modifier = Modifier.height(24.dp))
+
+                // Master Switch
+                Card(modifier = Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f))) {
+                    Row(modifier = Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Text(stringResource(R.string.active_protection), style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
+                        Switch(checked = isProtectionActive, onCheckedChange = { isChecked ->
+                            if (isChecked && Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                                val roleManager = context.getSystemService(Context.ROLE_SERVICE) as RoleManager
+                                if (!roleManager.isRoleHeld(RoleManager.ROLE_BROWSER)) {
+                                    roleLauncher.launch(roleManager.createRequestRoleIntent(RoleManager.ROLE_BROWSER))
+                                    return@Switch
                                 }
                             }
-                        )
+                            toggleSystemState(isChecked, context, prefs)
+                            isProtectionActive = isChecked
+                        })
                     }
-
-                    Spacer(modifier = Modifier.height(24.dp))
-                    HorizontalDivider(color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.2f))
-                    Spacer(modifier = Modifier.height(24.dp))
-
-                    TargetBrowserSelector(
-                        prefs = prefs,
-                        installedBrowsers = installedBrowsers,
-                        modifier = Modifier.fillMaxWidth()
-                    )
                 }
+
+                Spacer(modifier = Modifier.height(32.dp))
+                Text("Recent Activity", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, modifier = Modifier.fillMaxWidth())
+                Spacer(modifier = Modifier.height(8.dp))
+            }
+
+            // Recent Links List
+            items(recentLinks) { link ->
+                RecentLinkItem(link)
+            }
+
+            item {
+                Spacer(modifier = Modifier.height(32.dp))
+                HorizontalDivider()
+                Spacer(modifier = Modifier.height(16.dp))
+
+                TargetBrowserSelector(prefs = prefs, installedBrowsers = installedBrowsers, modifier = Modifier.fillMaxWidth())
+
+                Spacer(modifier = Modifier.height(16.dp))
+
+                // Clear History Button
+                TextButton(
+                    onClick = { scope.launch { linkDao.clearHistory() } },
+                    colors = ButtonDefaults.textButtonColors(contentColor = Color.Gray)
+                ) {
+                    Icon(Icons.Default.Delete, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Clear All History")
+                }
+                Spacer(modifier = Modifier.height(32.dp))
             }
         }
+    }
+}
+
+private fun toggleSystemState(isActive: Boolean, context: Context, prefs: android.content.SharedPreferences) {
+    prefs.edit().putBoolean("is_active", isActive).apply()
+    val workManager = WorkManager.getInstance(context)
+    if (isActive) {
+        val debugWorkRequest = PeriodicWorkRequestBuilder<DebugWorker>(15, TimeUnit.MINUTES).build()
+        workManager.enqueueUniquePeriodicWork("DebugAliveWork", androidx.work.ExistingPeriodicWorkPolicy.KEEP, debugWorkRequest)
+    } else {
+        workManager.cancelUniqueWork("DebugAliveWork")
     }
 }
 
 private fun saveCurrentDefaultBrowser(context: Context, prefs: android.content.SharedPreferences) {
     val browserIntent = Intent(Intent.ACTION_VIEW, Uri.parse("http://www.google.com"))
     val resolveInfo = context.packageManager.resolveActivity(browserIntent, PackageManager.MATCH_DEFAULT_ONLY)
-
     val defaultPackage = resolveInfo?.activityInfo?.packageName
     if (defaultPackage != null && defaultPackage != context.packageName && defaultPackage != "android") {
         prefs.edit().putString("target_browser", defaultPackage).apply()
-    }
-}
-
-private fun toggleSystemState(isActive: Boolean, context: Context, prefs: android.content.SharedPreferences) {
-    prefs.edit().putBoolean("is_active", isActive).apply()
-
-    val workManager = WorkManager.getInstance(context)
-    if (isActive) {
-        val debugWorkRequest = PeriodicWorkRequestBuilder<DebugWorker>(15, TimeUnit.MINUTES).build()
-        workManager.enqueueUniquePeriodicWork(
-            "DebugAliveWork",
-            androidx.work.ExistingPeriodicWorkPolicy.KEEP,
-            debugWorkRequest
-        )
-    } else {
-        workManager.cancelUniqueWork("DebugAliveWork")
     }
 }
