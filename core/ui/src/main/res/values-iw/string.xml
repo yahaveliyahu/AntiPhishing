@@ -1,7 +1,17 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="active_protection">הגנה פעילה</string>
+    <string name="stats_scanned_today">נסרקו היום</string>
+    <string name="stats_threats_blocked">איומים שנחסמו</string>
+    <string name="recent_activity">פעילות אחרונה</string>
+    <string name="clear_history">נקה היסטוריה</string>
 
-    <string name="fallback_browser_name">Chrome (ברירת מחדל)</string>
     <string name="target_browser_label">דפדפן יעד (כשהקישור בטוח/מעוקף):</string>
+    <string name="change_language">שינוי שפה</string>
+    <string name="fallback_browser_name">Chrome (ברירת מחדל)</string>
 
+    <string name="alert_title">התראת AntiPhishing</string>
+    <string name="alert_text">האם תרצה לסרוק את הקישור לפני הפתיחה?</string>
+    <string name="scan_button">סרוק קישור</string>
+    <string name="open_directly">פתח ישירות</string>
 </resources>

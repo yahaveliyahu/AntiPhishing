@@ -1,6 +1,17 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="active_protection">Active Protection</string>
+    <string name="stats_scanned_today">Scanned Today</string>
+    <string name="stats_threats_blocked">Threats Blocked</string>
+    <string name="recent_activity">Recent Activity</string>
+    <string name="clear_history">Clear All History</string>
 
-    <string name="fallback_browser_name">Chrome (Fallback)</string>
     <string name="target_browser_label">Target Browser (When safe/bypassed):</string>
+    <string name="change_language">Change Language</string>
+    <string name="fallback_browser_name">Chrome (Fallback)</string>
+
+    <string name="alert_title">AntiPhishing Alert</string>
+    <string name="alert_text">Do you want to scan this link before opening?</string>
+    <string name="scan_button">Scan Link</string>
+    <string name="open_directly">Open directly</string>
 </resources>

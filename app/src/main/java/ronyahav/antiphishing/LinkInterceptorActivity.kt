@@ -13,7 +13,6 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.ui.res.stringResource
 import androidx.lifecycle.lifecycleScope
-import dagger.hilt.android.EntryPointAccessors
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.launch
 import ronyahav.antiphishing.core.database.LinkDao
@@ -44,29 +43,25 @@ class LinkInterceptorActivity : ComponentActivity() {
             AntiPhishingTheme {
                 AlertDialog(
                     onDismissRequest = {
-                        forwardToBrowser(url, prefs)
-                        finish()
+                        // If dialog is dismissed without selection, treat as safe/bypassed
+                        processAndForward(url, isSuspicious = false, prefs = prefs)
                     },
                     title = { Text(stringResource(id = R.string.alert_title)) },
                     text = { Text(stringResource(id = R.string.alert_text) + "\n\n$url") },
                     confirmButton = {
                         val scanMsg = stringResource(id = R.string.simulating_scan)
                         TextButton(onClick = {
+                            // User clicked "Scan Link" (Marked as Red/Suspicious for ML training)
                             Toast.makeText(this@LinkInterceptorActivity, scanMsg, Toast.LENGTH_SHORT).show()
-
-                            // Perform initial heuristic analysis and save to DB
-                            analyzeAndSave(url)
-
-                            forwardToBrowser(url, prefs)
-                            finish()
+                            processAndForward(url, isSuspicious = true, prefs = prefs)
                         }) {
                             Text(stringResource(id = R.string.scan_button))
                         }
                     },
                     dismissButton = {
                         TextButton(onClick = {
-                            forwardToBrowser(url, prefs)
-                            finish()
+                            // User clicked "Open directly" (Marked as Green/Safe, enters 5-link FIFO)
+                            processAndForward(url, isSuspicious = false, prefs = prefs)
                         }) {
                             Text(stringResource(id = R.string.open_directly))
                         }
@@ -76,24 +71,25 @@ class LinkInterceptorActivity : ComponentActivity() {
         }
     }
 
-    private fun analyzeAndSave(url: String) {
+    // Handles the database insertion and navigates away immediately
+    private fun processAndForward(url: String, isSuspicious: Boolean, prefs: android.content.SharedPreferences) {
         lifecycleScope.launch {
-            // Simple heuristic check for PoC: if URL contains sensitive keywords, mark as suspicious
-            val suspiciousKeywords = listOf("login", "verify", "secure", "update", "bank", "free", "phish")
-            val isSuspicious = suspiciousKeywords.any { url.lowercase().contains(it) }
-
-            // Generate a dummy risk score
+            // Generate a dummy risk score depending on user choice (Red vs Green)
             val dummyScore = if (isSuspicious) (70..100).random() else (0..30).random()
 
             val linkEntry = ScannedLink(
                 url = url,
                 isSuspicious = isSuspicious,
                 riskScore = dummyScore,
-                threatType = if (isSuspicious) "Suspicious Keyword Detected" else null
+                threatType = if (isSuspicious) "User Flagged / Scan Needed" else null
             )
 
-            // Uses our smart DAO logic: Keep Red links, FIFO (max 5) for Green links
+            // Save to DB. Safe links are trimmed to 5, Suspicious links are kept forever.
             linkDao.insertAndTrim(linkEntry)
+
+            // Forward to target browser and close interceptor
+            forwardToBrowser(url, prefs)
+            finish()
         }
     }
 
@@ -115,6 +111,7 @@ class LinkInterceptorActivity : ComponentActivity() {
         try {
             startActivity(browserIntent)
         } catch (e: Exception) {
+            // Fallback if no specific browser handles it
             browserIntent.setPackage(null)
             startActivity(browserIntent)
         }

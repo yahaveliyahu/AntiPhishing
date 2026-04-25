@@ -4,16 +4,24 @@
     <string name="protection_disabled">Protection Disabled</string>
     <string name="welcome_message">Your device is being monitored for phishing attempts in real-time.</string>
     <string name="active_protection">Active Protection</string>
+
+    <string name="stats_scanned_today">Scanned Today</string>
+    <string name="stats_threats_blocked">Threats Blocked</string>
+    <string name="recent_activity">Recent Activity</string>
+    <string name="clear_history">Clear All History</string>
+
     <string name="target_browser_label">Target Browser (When safe/bypassed):</string>
     <string name="change_language">Change Language</string>
     <string name="browser_role_required">Browser role required for protection</string>
     <string name="tracking_active">AntiPhishing is now tracking links!</string>
     <string name="protection_deactivated">Protection deactivated. Links will bypass app.</string>
     <string name="simulating_scan">Simulating Scan...</string>
+
     <string name="alert_title">AntiPhishing Alert</string>
     <string name="alert_text">Do you want to scan this link before opening?</string>
     <string name="scan_button">Scan Link</string>
     <string name="open_directly">Open directly</string>
+
     <string name="no_browser_found">Could not find an external browser</string>
     <string name="fallback_browser_name">Chrome (Fallback)</string>
 </resources>

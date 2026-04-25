@@ -1,5 +1,6 @@
 package ronyahav.antiphishing
 
+import android.Manifest
 import android.app.role.RoleManager
 import android.content.Context
 import android.content.Intent
@@ -7,6 +8,7 @@ import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -27,7 +29,9 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.core.content.ContextCompat
 import androidx.core.os.LocaleListCompat
+import androidx.lifecycle.lifecycleScope
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import dagger.hilt.android.AndroidEntryPoint
@@ -96,7 +100,7 @@ fun MainContent(onLanguageToggle: () -> Unit, context: Context, linkDao: LinkDao
                 title = { Text(stringResource(R.string.app_name)) },
                 actions = {
                     IconButton(onClick = onLanguageToggle) {
-                        Icon(Icons.Default.Language, contentDescription = null)
+                        Icon(Icons.Default.Language, contentDescription = stringResource(R.string.change_language))
                     }
                 }
             )
@@ -120,10 +124,10 @@ fun MainContent(onLanguageToggle: () -> Unit, context: Context, linkDao: LinkDao
 
                 Spacer(modifier = Modifier.height(24.dp))
 
-                // Stats Section
+                // Translated Stats Section
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                    StatCard(label = "Scanned Today", value = todayCount.toString(), color = MaterialTheme.colorScheme.primary, modifier = Modifier.weight(1f))
-                    StatCard(label = "Threats Blocked", value = blockedCount.toString(), color = Color.Red, modifier = Modifier.weight(1f))
+                    StatCard(label = stringResource(R.string.stats_scanned_today), value = todayCount.toString(), color = MaterialTheme.colorScheme.primary, modifier = Modifier.weight(1f))
+                    StatCard(label = stringResource(R.string.stats_threats_blocked), value = blockedCount.toString(), color = Color.Red, modifier = Modifier.weight(1f))
                 }
 
                 Spacer(modifier = Modifier.height(24.dp))
@@ -136,6 +140,7 @@ fun MainContent(onLanguageToggle: () -> Unit, context: Context, linkDao: LinkDao
                             if (isChecked && Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                                 val roleManager = context.getSystemService(Context.ROLE_SERVICE) as RoleManager
                                 if (!roleManager.isRoleHeld(RoleManager.ROLE_BROWSER)) {
+                                    saveCurrentDefaultBrowser(context, prefs)
                                     roleLauncher.launch(roleManager.createRequestRoleIntent(RoleManager.ROLE_BROWSER))
                                     return@Switch
                                 }
@@ -147,7 +152,8 @@ fun MainContent(onLanguageToggle: () -> Unit, context: Context, linkDao: LinkDao
                 }
 
                 Spacer(modifier = Modifier.height(32.dp))
-                Text("Recent Activity", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, modifier = Modifier.fillMaxWidth())
+                // Translated Recent Activity Title
+                Text(stringResource(R.string.recent_activity), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, modifier = Modifier.fillMaxWidth())
                 Spacer(modifier = Modifier.height(8.dp))
             }
 
@@ -165,14 +171,14 @@ fun MainContent(onLanguageToggle: () -> Unit, context: Context, linkDao: LinkDao
 
                 Spacer(modifier = Modifier.height(16.dp))
 
-                // Clear History Button
+                // Translated Clear History Button
                 TextButton(
                     onClick = { scope.launch { linkDao.clearHistory() } },
                     colors = ButtonDefaults.textButtonColors(contentColor = Color.Gray)
                 ) {
                     Icon(Icons.Default.Delete, contentDescription = null, modifier = Modifier.size(18.dp))
                     Spacer(modifier = Modifier.width(8.dp))
-                    Text("Clear All History")
+                    Text(stringResource(R.string.clear_history))
                 }
                 Spacer(modifier = Modifier.height(32.dp))
             }

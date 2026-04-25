@@ -4,16 +4,24 @@
     <string name="protection_disabled">ההגנה כבויה</string>
     <string name="welcome_message">המכשיר שלך מנוטר כעת מפני ניסיונות פישינג בזמן אמת.</string>
     <string name="active_protection">הגנה פעילה</string>
+
+    <string name="stats_scanned_today">נסרקו היום</string>
+    <string name="stats_threats_blocked">איומים שנחסמו</string>
+    <string name="recent_activity">פעילות אחרונה</string>
+    <string name="clear_history">נקה היסטוריה</string>
+
     <string name="target_browser_label">דפדפן יעד (כשהקישור בטוח/מעוקף):</string>
     <string name="change_language">שינוי שפה</string>
     <string name="browser_role_required">נדרשת הרשאת דפדפן עבור ההגנה</string>
     <string name="tracking_active">AntiPhishing כעת עוקבת אחרי קישורים!</string>
     <string name="protection_deactivated">ההגנה בוטלה. קישורים יעקפו את האפליקציה.</string>
     <string name="simulating_scan">מדמה סריקה...</string>
+
     <string name="alert_title">התראת AntiPhishing</string>
     <string name="alert_text">האם תרצה לסרוק את הקישור לפני הפתיחה?</string>
     <string name="scan_button">סרוק קישור</string>
     <string name="open_directly">פתח ישירות</string>
+
     <string name="no_browser_found">לא נמצא דפדפן חיצוני</string>
     <string name="fallback_browser_name">Chrome (ברירת מחדל)</string>
 </resources>
