@@ -53,6 +53,7 @@ dependencies {
     // Import the UI module
     implementation(project(":core:ui"))
     implementation(project(":core:utils"))
+    implementation(project(":core:database"))
 
     // Core AndroidX and AppCompat
     implementation(libs.androidx.core.ktx)
