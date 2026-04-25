@@ -26,8 +26,7 @@ class LinkInterceptorActivity : ComponentActivity() {
 
         if (!isActive || url == null) {
             Log.d("AntiPhishing", "System OFF. Bypassing link: $url")
-            Toast.makeText(this, "AntiPhishing OFF -> Forwarding", Toast.LENGTH_SHORT).show()
-            if (url != null) forwardToBrowser(url)
+            if (url != null) forwardToBrowser(url, prefs)
             finish()
             return
         }
@@ -39,7 +38,7 @@ class LinkInterceptorActivity : ComponentActivity() {
             AntiPhishingTheme {
                 AlertDialog(
                     onDismissRequest = {
-                        forwardToBrowser(url)
+                        forwardToBrowser(url, prefs)
                         finish()
                     },
                     title = { Text("AntiPhishing Alert") },
@@ -47,7 +46,7 @@ class LinkInterceptorActivity : ComponentActivity() {
                     confirmButton = {
                         TextButton(onClick = {
                             Toast.makeText(this@LinkInterceptorActivity, "Simulating Scan...", Toast.LENGTH_SHORT).show()
-                            forwardToBrowser(url)
+                            forwardToBrowser(url, prefs)
                             finish()
                         }) {
                             Text("Scan Link")
@@ -55,7 +54,7 @@ class LinkInterceptorActivity : ComponentActivity() {
                     },
                     dismissButton = {
                         TextButton(onClick = {
-                            forwardToBrowser(url)
+                            forwardToBrowser(url, prefs)
                             finish()
                         }) {
                             Text("Open directly")
@@ -66,26 +65,34 @@ class LinkInterceptorActivity : ComponentActivity() {
         }
     }
 
-    private fun forwardToBrowser(url: String) {
-        // Create an intent to view the URL
+    private fun forwardToBrowser(url: String, prefs: android.content.SharedPreferences) {
         val browserIntent = Intent(Intent.ACTION_VIEW, Uri.parse(url))
 
-        // Find all apps that can handle this intent
-        val resolveInfos = packageManager.queryIntentActivities(browserIntent, PackageManager.MATCH_DEFAULT_ONLY)
+        // Fetch saved target browser, default to Chrome
+        var targetPackage = prefs.getString("target_browser", "com.android.chrome") ?: "com.android.chrome"
 
-        // Find the first one that is NOT our app to avoid an infinite loop
-        for (info in resolveInfos) {
-            if (info.activityInfo.packageName != packageName) {
-                browserIntent.setPackage(info.activityInfo.packageName)
-                break
-            }
+        // Verify if the target browser is still installed
+        val isInstalled = try {
+            packageManager.getPackageInfo(targetPackage, 0)
+            true
+        } catch (e: PackageManager.NameNotFoundException) {
+            false
         }
 
+        // If target is uninstalled, fallback silently to Chrome
+        if (!isInstalled) {
+            targetPackage = "com.android.chrome"
+        }
+
+        browserIntent.setPackage(targetPackage)
         browserIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+
         try {
             startActivity(browserIntent)
         } catch (e: Exception) {
-            Toast.makeText(this, "Could not find an external browser", Toast.LENGTH_SHORT).show()
+            // Absolute fallback: strip the package and let the system try
+            browserIntent.setPackage(null)
+            startActivity(browserIntent)
         }
     }
 }
