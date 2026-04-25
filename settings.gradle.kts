@@ -22,3 +22,4 @@ dependencyResolutionManagement {
 rootProject.name = "AntiPhishing"
 include(":app")
 include(":core:ui")
+include(":core:utils")
