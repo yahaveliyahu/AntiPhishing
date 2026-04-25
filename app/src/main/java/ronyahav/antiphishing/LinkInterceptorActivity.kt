@@ -5,6 +5,7 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Bundle
+import android.util.Log
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -20,18 +21,20 @@ class LinkInterceptorActivity : ComponentActivity() {
 
         val url = intent.dataString
 
-        // Check if the system is turned ON or OFF
         val prefs = getSharedPreferences("AntiPhishingPrefs", Context.MODE_PRIVATE)
         val isActive = prefs.getBoolean("is_active", false)
 
         if (!isActive || url == null) {
-            // System is OFF: Let the user pass to the browser silently
+            Log.d("AntiPhishing", "System OFF. Bypassing link: $url")
+            Toast.makeText(this, "AntiPhishing OFF -> Forwarding", Toast.LENGTH_SHORT).show()
             if (url != null) forwardToBrowser(url)
             finish()
             return
         }
 
-        // System is ON: Show the standard system dialog
+        // System is ON: Show debug toast and the dialog
+        Toast.makeText(this, "AntiPhishing intercepted: $url", Toast.LENGTH_LONG).show()
+
         setContent {
             AntiPhishingTheme {
                 AlertDialog(
@@ -44,7 +47,6 @@ class LinkInterceptorActivity : ComponentActivity() {
                     confirmButton = {
                         TextButton(onClick = {
                             Toast.makeText(this@LinkInterceptorActivity, "Simulating Scan...", Toast.LENGTH_SHORT).show()
-                            // Temporarily forwarding to browser after "scan" for PoC
                             forwardToBrowser(url)
                             finish()
                         }) {
@@ -65,19 +67,25 @@ class LinkInterceptorActivity : ComponentActivity() {
     }
 
     private fun forwardToBrowser(url: String) {
+        // Create an intent to view the URL
         val browserIntent = Intent(Intent.ACTION_VIEW, Uri.parse(url))
 
-        // Find the default browser to avoid opening ourselves in a loop
-        val resolveInfo = packageManager.resolveActivity(browserIntent, PackageManager.MATCH_DEFAULT_ONLY)
-        if (resolveInfo != null && resolveInfo.activityInfo.packageName != packageName) {
-            browserIntent.setPackage(resolveInfo.activityInfo.packageName)
+        // Find all apps that can handle this intent
+        val resolveInfos = packageManager.queryIntentActivities(browserIntent, PackageManager.MATCH_DEFAULT_ONLY)
+
+        // Find the first one that is NOT our app to avoid an infinite loop
+        for (info in resolveInfos) {
+            if (info.activityInfo.packageName != packageName) {
+                browserIntent.setPackage(info.activityInfo.packageName)
+                break
+            }
         }
 
         browserIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         try {
             startActivity(browserIntent)
         } catch (e: Exception) {
-            Toast.makeText(this, "Could not find a browser", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, "Could not find an external browser", Toast.LENGTH_SHORT).show()
         }
     }
 }

@@ -1,10 +1,12 @@
 package ronyahav.antiphishing
 
 import android.Manifest
+import android.app.role.RoleManager
 import android.content.Context
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
+import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -38,7 +40,8 @@ class MainActivity : AppCompatActivity() {
             AntiPhishingTheme {
                 MainContent(
                     onLanguageToggle = { toggleLanguage() },
-                    context = this
+                    context = this,
+                    activity = this
                 )
             }
         }
@@ -58,17 +61,38 @@ class MainActivity : AppCompatActivity() {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun MainContent(onLanguageToggle: () -> Unit, context: Context) {
+fun MainContent(onLanguageToggle: () -> Unit, context: Context, activity: AppCompatActivity) {
     val prefs = context.getSharedPreferences("AntiPhishingPrefs", Context.MODE_PRIVATE)
     var isProtectionActive by remember { mutableStateOf(prefs.getBoolean("is_active", false)) }
 
-    // Permission request launcher for Notifications (Android 13+)
+    // Launcher for requesting Default Browser Role
+    val roleLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        // Check if the user granted the browser role
+        val roleManager = context.getSystemService(Context.ROLE_SERVICE) as RoleManager
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q && roleManager.isRoleHeld(RoleManager.ROLE_BROWSER)) {
+            Toast.makeText(context, "AntiPhishing is now tracking links!", Toast.LENGTH_SHORT).show()
+            toggleSystemState(true, context, prefs)
+            isProtectionActive = true
+        } else {
+            Toast.makeText(context, "Browser role required for protection", Toast.LENGTH_LONG).show()
+            isProtectionActive = false
+        }
+    }
+
     val permissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestPermission()
     ) { isGranted ->
-        if (isGranted) {
-            toggleSystemState(true, context, prefs)
-            isProtectionActive = true
+        if (isGranted && Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            val roleManager = context.getSystemService(Context.ROLE_SERVICE) as RoleManager
+            if (!roleManager.isRoleHeld(RoleManager.ROLE_BROWSER)) {
+                val intent = roleManager.createRequestRoleIntent(RoleManager.ROLE_BROWSER)
+                roleLauncher.launch(intent)
+            } else {
+                toggleSystemState(true, context, prefs)
+                isProtectionActive = true
+            }
         }
     }
 
@@ -109,22 +133,36 @@ fun MainContent(onLanguageToggle: () -> Unit, context: Context) {
 
                     Spacer(modifier = Modifier.height(32.dp))
 
-                    // The Master Switch
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text("Active Protection", style = MaterialTheme.typography.titleMedium)
                         Spacer(modifier = Modifier.width(16.dp))
                         Switch(
                             checked = isProtectionActive,
                             onCheckedChange = { isChecked ->
-                                if (isChecked && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                                    val status = ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS)
-                                    if (status != PackageManager.PERMISSION_GRANTED) {
-                                        permissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
-                                        return@Switch
+                                if (isChecked) {
+                                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                                        val status = ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS)
+                                        if (status != PackageManager.PERMISSION_GRANTED) {
+                                            permissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                                            return@Switch
+                                        }
                                     }
+                                    // Request Browser Role if not already held
+                                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                                        val roleManager = context.getSystemService(Context.ROLE_SERVICE) as RoleManager
+                                        if (!roleManager.isRoleHeld(RoleManager.ROLE_BROWSER)) {
+                                            val intent = roleManager.createRequestRoleIntent(RoleManager.ROLE_BROWSER)
+                                            roleLauncher.launch(intent)
+                                            return@Switch
+                                        }
+                                    }
+                                    toggleSystemState(true, context, prefs)
+                                    isProtectionActive = true
+                                } else {
+                                    toggleSystemState(false, context, prefs)
+                                    isProtectionActive = false
+                                    Toast.makeText(context, "Protection deactivated. Links will bypass app.", Toast.LENGTH_SHORT).show()
                                 }
-                                toggleSystemState(isChecked, context, prefs)
-                                isProtectionActive = isChecked
                             }
                         )
                     }
@@ -134,7 +172,6 @@ fun MainContent(onLanguageToggle: () -> Unit, context: Context) {
     }
 }
 
-// Helper function to handle saving state and scheduling background work
 private fun toggleSystemState(isActive: Boolean, context: Context, prefs: android.content.SharedPreferences) {
     prefs.edit().putBoolean("is_active", isActive).apply()
 
