@@ -1,5 +1,0 @@
-<resources>
-    <string name="app_name">AntiPhishing</string>
-    <string name="hello_world">המערכת מוגנת</string>
-    <string name="welcome_message">המכשיר שלך מנוטר כעת מפני ניסיונות פישינג בזמן אמת.</string>
-</resources>

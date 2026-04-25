@@ -1,5 +1,0 @@
-<resources>
-    <string name="app_name">AntiPhishing</string>
-    <string name="hello_world">System Protected</string>
-    <string name="welcome_message">Your device is being monitored for phishing attempts in real-time.</string>
-</resources>

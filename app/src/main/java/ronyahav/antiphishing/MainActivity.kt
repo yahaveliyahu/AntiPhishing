@@ -68,19 +68,23 @@ fun MainContent(onLanguageToggle: () -> Unit, context: Context) {
     val prefs = context.getSharedPreferences("AntiPhishingPrefs", Context.MODE_PRIVATE)
     var isProtectionActive by remember { mutableStateOf(prefs.getBoolean("is_active", false)) }
 
-    // Fetch installed browsers using our new utility class
     val installedBrowsers = remember { BrowserUtils.getInstalledBrowsers(context) }
+
+    // Logic for tracking link successes
+    val successMsg = stringResource(id = R.string.tracking_active)
+    val failureMsg = stringResource(id = R.string.browser_role_required)
+    val deactivatedMsg = stringResource(id = R.string.protection_deactivated)
 
     val roleLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.StartActivityForResult()
     ) {
         val roleManager = context.getSystemService(Context.ROLE_SERVICE) as RoleManager
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q && roleManager.isRoleHeld(RoleManager.ROLE_BROWSER)) {
-            Toast.makeText(context, "AntiPhishing is now tracking links!", Toast.LENGTH_SHORT).show()
+            Toast.makeText(context, successMsg, Toast.LENGTH_SHORT).show()
             toggleSystemState(true, context, prefs)
             isProtectionActive = true
         } else {
-            Toast.makeText(context, "Browser role required for protection", Toast.LENGTH_LONG).show()
+            Toast.makeText(context, failureMsg, Toast.LENGTH_LONG).show()
             isProtectionActive = false
         }
     }
@@ -107,7 +111,7 @@ fun MainContent(onLanguageToggle: () -> Unit, context: Context) {
                 title = { Text(stringResource(R.string.app_name)) },
                 actions = {
                     IconButton(onClick = onLanguageToggle) {
-                        Icon(Icons.Default.Language, contentDescription = "Change Language")
+                        Icon(Icons.Default.Language, contentDescription = stringResource(id = R.string.change_language))
                     }
                 }
             )
@@ -130,7 +134,7 @@ fun MainContent(onLanguageToggle: () -> Unit, context: Context) {
                     Spacer(modifier = Modifier.height(24.dp))
 
                     Text(
-                        text = if (isProtectionActive) "System Protected" else "Protection Disabled",
+                        text = if (isProtectionActive) stringResource(id = R.string.hello_world) else stringResource(id = R.string.protection_disabled),
                         style = MaterialTheme.typography.headlineMedium,
                         color = if (isProtectionActive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
                         textAlign = TextAlign.Center
@@ -139,7 +143,7 @@ fun MainContent(onLanguageToggle: () -> Unit, context: Context) {
                     Spacer(modifier = Modifier.height(32.dp))
 
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text("Active Protection", style = MaterialTheme.typography.titleMedium)
+                        Text(stringResource(id = R.string.active_protection), style = MaterialTheme.typography.titleMedium)
                         Spacer(modifier = Modifier.width(16.dp))
                         Switch(
                             checked = isProtectionActive,
@@ -166,6 +170,7 @@ fun MainContent(onLanguageToggle: () -> Unit, context: Context) {
                                 } else {
                                     toggleSystemState(false, context, prefs)
                                     isProtectionActive = false
+                                    Toast.makeText(context, deactivatedMsg, Toast.LENGTH_SHORT).show()
                                 }
                             }
                         )
@@ -175,7 +180,6 @@ fun MainContent(onLanguageToggle: () -> Unit, context: Context) {
                     HorizontalDivider(color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.2f))
                     Spacer(modifier = Modifier.height(24.dp))
 
-                    // Injecting the separated UI component
                     TargetBrowserSelector(
                         prefs = prefs,
                         installedBrowsers = installedBrowsers,
@@ -187,7 +191,6 @@ fun MainContent(onLanguageToggle: () -> Unit, context: Context) {
     }
 }
 
-// Helper: Automatically finds and saves the current default browser before taking control
 private fun saveCurrentDefaultBrowser(context: Context, prefs: android.content.SharedPreferences) {
     val browserIntent = Intent(Intent.ACTION_VIEW, Uri.parse("http://www.google.com"))
     val resolveInfo = context.packageManager.resolveActivity(browserIntent, PackageManager.MATCH_DEFAULT_ONLY)
@@ -198,7 +201,6 @@ private fun saveCurrentDefaultBrowser(context: Context, prefs: android.content.S
     }
 }
 
-// Helper: Toggles background worker based on system state
 private fun toggleSystemState(isActive: Boolean, context: Context, prefs: android.content.SharedPreferences) {
     prefs.edit().putBoolean("is_active", isActive).apply()
 

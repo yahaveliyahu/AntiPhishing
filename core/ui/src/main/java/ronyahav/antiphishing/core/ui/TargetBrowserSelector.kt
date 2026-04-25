@@ -18,6 +18,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import ronyahav.antiphishing.core.utils.BrowserApp
 
@@ -30,7 +31,7 @@ fun TargetBrowserSelector(
 ) {
     val fallbackChrome = "com.android.chrome"
 
-    // Load the currently selected browser from SharedPreferences
+    // Manage current selection state
     var selectedBrowserPackage by remember {
         mutableStateOf(prefs.getString("target_browser", fallbackChrome) ?: fallbackChrome)
     }
@@ -39,7 +40,7 @@ fun TargetBrowserSelector(
 
     Column(modifier = modifier) {
         Text(
-            text = "Target Browser (When safe/bypassed):",
+            text = stringResource(id = R.string.target_browser_label),
             style = MaterialTheme.typography.labelLarge
         )
         Spacer(modifier = Modifier.height(8.dp))
@@ -48,10 +49,10 @@ fun TargetBrowserSelector(
             expanded = expanded,
             onExpandedChange = { expanded = !expanded }
         ) {
-            // Find the display name for the currently selected package
+            // Display localized fallback or the app label
             val currentBrowserName = installedBrowsers.find {
                 it.packageName == selectedBrowserPackage
-            }?.name ?: "Chrome (Fallback)"
+            }?.name ?: stringResource(id = R.string.fallback_browser_name)
 
             OutlinedTextField(
                 value = currentBrowserName,
@@ -72,7 +73,6 @@ fun TargetBrowserSelector(
                         text = { Text(browser.name) },
                         onClick = {
                             selectedBrowserPackage = browser.packageName
-                            // Save user selection to persistence
                             prefs.edit().putString("target_browser", browser.packageName).apply()
                             expanded = false
                         }

@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+
+    <string name="fallback_browser_name">Chrome (Fallback)</string>
+    <string name="target_browser_label">Target Browser (When safe/bypassed):</string>
+</resources>
