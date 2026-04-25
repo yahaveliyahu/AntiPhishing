@@ -31,11 +31,10 @@ import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import ronyahav.antiphishing.core.ui.AntiPhishingTheme
 import ronyahav.antiphishing.core.ui.SecurityShield
+import ronyahav.antiphishing.core.ui.TargetBrowserSelector
+import ronyahav.antiphishing.core.utils.BrowserUtils
 import java.util.Locale
 import java.util.concurrent.TimeUnit
-
-// Data class to represent an installed browser
-data class BrowserApp(val name: String, val packageName: String)
 
 class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -45,8 +44,7 @@ class MainActivity : AppCompatActivity() {
             AntiPhishingTheme {
                 MainContent(
                     onLanguageToggle = { toggleLanguage() },
-                    context = this,
-                    activity = this
+                    context = this
                 )
             }
         }
@@ -66,19 +64,12 @@ class MainActivity : AppCompatActivity() {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun MainContent(onLanguageToggle: () -> Unit, context: Context, activity: AppCompatActivity) {
+fun MainContent(onLanguageToggle: () -> Unit, context: Context) {
     val prefs = context.getSharedPreferences("AntiPhishingPrefs", Context.MODE_PRIVATE)
     var isProtectionActive by remember { mutableStateOf(prefs.getBoolean("is_active", false)) }
 
-    // Default fallback is Chrome
-    val fallbackChrome = "com.android.chrome"
-    var selectedBrowserPackage by remember {
-        mutableStateOf(prefs.getString("target_browser", fallbackChrome) ?: fallbackChrome)
-    }
-
-    // Fetch installed browsers
-    val installedBrowsers = remember { getInstalledBrowsers(context) }
-    var expanded by remember { mutableStateOf(false) }
+    // Fetch installed browsers using our new utility class
+    val installedBrowsers = remember { BrowserUtils.getInstalledBrowsers(context) }
 
     val roleLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.StartActivityForResult()
@@ -100,7 +91,6 @@ fun MainContent(onLanguageToggle: () -> Unit, context: Context, activity: AppCom
         if (isGranted && Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             val roleManager = context.getSystemService(Context.ROLE_SERVICE) as RoleManager
             if (!roleManager.isRoleHeld(RoleManager.ROLE_BROWSER)) {
-                // Save current default browser before taking over
                 saveCurrentDefaultBrowser(context, prefs)
                 val intent = roleManager.createRequestRoleIntent(RoleManager.ROLE_BROWSER)
                 roleLauncher.launch(intent)
@@ -182,67 +172,22 @@ fun MainContent(onLanguageToggle: () -> Unit, context: Context, activity: AppCom
                     }
 
                     Spacer(modifier = Modifier.height(24.dp))
-                    Divider(color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.2f))
+                    HorizontalDivider(color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.2f))
                     Spacer(modifier = Modifier.height(24.dp))
 
-                    Text("Target Browser (When safe/bypassed):", style = MaterialTheme.typography.labelLarge)
-                    Spacer(modifier = Modifier.height(8.dp))
-
-                    // Browser Selection Dropdown
-                    ExposedDropdownMenuBox(
-                        expanded = expanded,
-                        onExpandedChange = { expanded = !expanded }
-                    ) {
-                        val currentBrowserName = installedBrowsers.find { it.packageName == selectedBrowserPackage }?.name ?: "Chrome (Fallback)"
-
-                        OutlinedTextField(
-                            value = currentBrowserName,
-                            onValueChange = {},
-                            readOnly = true,
-                            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
-                            modifier = Modifier.menuAnchor()
-                        )
-
-                        ExposedDropdownMenu(
-                            expanded = expanded,
-                            onDismissRequest = { expanded = false }
-                        ) {
-                            installedBrowsers.forEach { browser ->
-                                DropdownMenuItem(
-                                    text = { Text(browser.name) },
-                                    onClick = {
-                                        selectedBrowserPackage = browser.packageName
-                                        prefs.edit().putString("target_browser", browser.packageName).apply()
-                                        expanded = false
-                                    }
-                                )
-                            }
-                        }
-                    }
+                    // Injecting the separated UI component
+                    TargetBrowserSelector(
+                        prefs = prefs,
+                        installedBrowsers = installedBrowsers,
+                        modifier = Modifier.fillMaxWidth()
+                    )
                 }
             }
         }
     }
 }
 
-// Helper: Retrieves list of installed browsers
-private fun getInstalledBrowsers(context: Context): List<BrowserApp> {
-    val browserIntent = Intent(Intent.ACTION_VIEW, Uri.parse("http://www.google.com"))
-    val resolveInfos = context.packageManager.queryIntentActivities(browserIntent, PackageManager.MATCH_ALL)
-
-    val browsers = mutableListOf<BrowserApp>()
-    for (info in resolveInfos) {
-        val packageName = info.activityInfo.packageName
-        if (packageName != context.packageName) { // Exclude our own app
-            val appName = info.loadLabel(context.packageManager).toString()
-            browsers.add(BrowserApp(appName, packageName))
-        }
-    }
-    // Remove duplicates that might arise from different activities in the same app
-    return browsers.distinctBy { it.packageName }
-}
-
-// Helper: Tries to find current default browser before we take over
+// Helper: Automatically finds and saves the current default browser before taking control
 private fun saveCurrentDefaultBrowser(context: Context, prefs: android.content.SharedPreferences) {
     val browserIntent = Intent(Intent.ACTION_VIEW, Uri.parse("http://www.google.com"))
     val resolveInfo = context.packageManager.resolveActivity(browserIntent, PackageManager.MATCH_DEFAULT_ONLY)
@@ -253,6 +198,7 @@ private fun saveCurrentDefaultBrowser(context: Context, prefs: android.content.S
     }
 }
 
+// Helper: Toggles background worker based on system state
 private fun toggleSystemState(isActive: Boolean, context: Context, prefs: android.content.SharedPreferences) {
     prefs.edit().putBoolean("is_active", isActive).apply()
 
