@@ -1,6 +1,5 @@
 package ronyahav.antiphishing
 
-import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
@@ -8,10 +7,8 @@ import android.os.Bundle
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.ui.res.stringResource
 import androidx.lifecycle.lifecycleScope
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.launch
@@ -20,23 +17,18 @@ import ronyahav.antiphishing.core.database.ScannedLink
 import ronyahav.antiphishing.core.ui.AntiPhishingTheme
 import javax.inject.Inject
 
-import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import ronyahav.antiphishing.core.ui.AntiPhishingTheme
 
 @AndroidEntryPoint
 class LinkInterceptorActivity : ComponentActivity() {
@@ -73,6 +65,15 @@ class LinkInterceptorActivity : ComponentActivity() {
 
             // Save result to local Room DB
             saveToLocalDb(url, result)
+
+            // Show toast when link is confirmed safe (whitelisted)
+            if (result is ApiClient.CheckResult.Whitelisted) {
+                Toast.makeText(
+                    this@LinkInterceptorActivity,
+                    "The link you entered is not malicious. You are safe 😊",
+                    Toast.LENGTH_SHORT
+                ).show()
+            }
 
             // Update UI based on result
             setContent {
@@ -307,7 +308,7 @@ fun ResultScreen(
 
                     Spacer(modifier = Modifier.height(24.dp))
 
-                    // Primary action — go back (recommended)
+                    // Primary action — go back
                     Button(
                         onClick = onGoBack,
                         modifier = Modifier.fillMaxWidth().height(52.dp),
