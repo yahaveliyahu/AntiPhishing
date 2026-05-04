@@ -1,6 +1,7 @@
 package ronyahav.antiphishing.core.ui
 
 import androidx.compose.animation.core.*
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Shield
@@ -11,6 +12,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
 
 @Composable
@@ -30,8 +32,10 @@ fun SecurityShield(
         label = "ShieldScale"
     )
 
-    Icon(
-        imageVector = Icons.Default.Shield,
+//    Icon(
+//        imageVector = Icons.Default.Shield,
+    Image(
+        painter = painterResource(id = R.drawable.shield),
         contentDescription = null,
         modifier = modifier
             .size(120.dp)
@@ -39,7 +43,7 @@ fun SecurityShield(
             .graphicsLayer {
                 // Subtle alpha animation to enhance the effect
                 alpha = 0.8f + (scale - 1f)
-            },
-        tint = MaterialTheme.colorScheme.primary
+            }
+//        tint = MaterialTheme.colorScheme.primary
     )
 }
