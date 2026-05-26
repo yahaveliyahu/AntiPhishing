@@ -7,16 +7,6 @@ import android.os.Bundle
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
-import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
-import androidx.lifecycle.lifecycleScope
-import dagger.hilt.android.AndroidEntryPoint
-import kotlinx.coroutines.launch
-import ronyahav.antiphishing.core.database.LinkDao
-import ronyahav.antiphishing.core.database.ScannedLink
-import ronyahav.antiphishing.core.ui.AntiPhishingTheme
-import javax.inject.Inject
-
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -27,8 +17,18 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.lifecycleScope
+import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import ronyahav.antiphishing.core.database.LinkDao
+import ronyahav.antiphishing.core.database.ScannedLink
+import ronyahav.antiphishing.core.ui.AntiPhishingTheme
+import javax.inject.Inject
+
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 
 @AndroidEntryPoint
 class LinkInterceptorActivity : ComponentActivity() {
@@ -52,22 +52,67 @@ class LinkInterceptorActivity : ComponentActivity() {
 
         // Show loading state while checking the URL
         setContent {
-            AntiPhishingTheme {
-                CheckingScreen(url = url)
-            }
+            AntiPhishingTheme { CheckingScreen(url = url) }
         }
 
-        // Check URL against MongoDB via Flask
         lifecycleScope.launch {
-            val result = withContext(Dispatchers.IO) {
+            // Step 1: Check URL against MongoDB via Flask
+            val serverResult = withContext(Dispatchers.IO) {
                 ApiClient.checkUrl(url)
             }
 
+            // Step 2: Lexical analysis for Unknown links
+            val finalResult: ApiClient.CheckResult = if (serverResult is ApiClient.CheckResult.Unknown) {
+                val lexical = withContext(Dispatchers.Default) {
+                    LexicalAnalyzer.analyze(url)
+                }
+
+                if (lexical.isObviouslyMalicious) {
+                    // Unambiguous signal (e.g. @ symbol, javascript: URI, data: URI).
+                    // Block immediately — no ML server call needed.
+                    ApiClient.CheckResult.Malicious(
+                        explanation = buildExplanation(lexical),
+                        source = "Lexical Analysis",
+                        confidence = 95,
+                        matchType = "lexical"
+                    )
+                } else {
+                    // Step 3 (ML model) not built yet.
+                    // Show a Toast to confirm the lexical analyzer ran successfully,
+                    // then allow the link through so testing is not blocked.
+                    val riskScore = lexical.features["lexical_risk_score"] ?: 0
+                    withContext(Dispatchers.Main) {
+                        Toast.makeText(
+                            this@LinkInterceptorActivity,
+                            "Step 3 not built yet. Lexical analysis complete. Risk score: $riskScore",
+                            Toast.LENGTH_LONG
+                        ).show()
+                    }
+                    // Return Unknown so the user sees the neutral screen and can choose to proceed
+                    ApiClient.CheckResult.Unknown(
+                        "Lexical analysis complete (score: $riskScore). " +
+                                "Step 3 ML model not built yet — cannot make final decision."
+                    )
+                }
+
+
+                    // -------------------------------------------------------------------------------------
+
+                    // Forward feature vector to Flask ML server (Step 3).
+                    // The ML model makes the actual classification decision.
+//                    withContext(Dispatchers.IO) {
+//                        ApiClient.scoreLexical(url, lexical.features)
+//                    }
+//                }
+            } else {
+                serverResult
+            }
+
             // Save result to local Room DB
-            saveToLocalDb(url, result)
+            saveToLocalDb(url, finalResult)
 
             // Show toast when link is confirmed safe (whitelisted)
-            if (result is ApiClient.CheckResult.Whitelisted) {
+            if (finalResult is ApiClient.CheckResult.Whitelisted) {
                 Toast.makeText(
                     this@LinkInterceptorActivity,
                     "The link you entered is not malicious. You are safe 😊",
@@ -80,7 +125,7 @@ class LinkInterceptorActivity : ComponentActivity() {
                 AntiPhishingTheme {
                     ResultScreen(
                         url = url,
-                        result = result,
+                        result = finalResult,
                         onProceed = { forwardToBrowser(url, prefs); finish() },
                         onGoBack = { finish() }
                     )
@@ -89,19 +134,26 @@ class LinkInterceptorActivity : ComponentActivity() {
         }
     }
 
-    // ── Save to local Room DB ─────────────────────────────────────────────────
+    // ── Helpers ───────────────────────────────────────────────────────────────
 
+    /** Builds the user-facing explanation string from lexical flags. */
+    private fun buildExplanation(lexical: LexicalAnalyzer.LexicalResult): String {
+        return lexical.flags.take(3).joinToString("\n")
+    }
+
+    // ── Save to local Room DB ─────────────────────────────────────────────────
     private suspend fun saveToLocalDb(url: String, result: ApiClient.CheckResult) {
         val linkEntry = ScannedLink(
-            url          = url,
+            url = url,
             isSuspicious = result is ApiClient.CheckResult.Malicious,
-            riskScore    = when (result) {
+            riskScore = when (result) {
                 is ApiClient.CheckResult.Whitelisted -> 0
-                is ApiClient.CheckResult.Malicious   -> result.confidence
-                is ApiClient.CheckResult.Unknown     -> 50
-                is ApiClient.CheckResult.Error       -> 50
+                is ApiClient.CheckResult.Malicious -> result.confidence
+                is ApiClient.CheckResult.Unknown -> 50
+                is ApiClient.CheckResult.Error -> 50
+                else -> 0
             },
-            threatType   = when (result) {
+            threatType = when (result) {
                 is ApiClient.CheckResult.Malicious -> result.source
                 else -> null
             }
@@ -109,60 +161,7 @@ class LinkInterceptorActivity : ComponentActivity() {
         linkDao.insertAndTrim(linkEntry)
     }
 
-//                AlertDialog(
-//                    onDismissRequest = {
-//                        // If dialog is dismissed without selection, treat as safe/bypassed
-//                        processAndForward(url, isSuspicious = false, prefs = prefs)
-//                    },
-//                    title = { Text(stringResource(id = R.string.alert_title)) },
-//                    text = { Text(stringResource(id = R.string.alert_text) + "\n\n$url") },
-//                    confirmButton = {
-//                        val scanMsg = stringResource(id = R.string.simulating_scan)
-//                        TextButton(onClick = {
-//                            // User clicked "Scan Link" (Marked as Red/Suspicious for ML training)
-//                            Toast.makeText(this@LinkInterceptorActivity, scanMsg, Toast.LENGTH_SHORT).show()
-//                            processAndForward(url, isSuspicious = true, prefs = prefs)
-//                        }) {
-//                            Text(stringResource(id = R.string.scan_button))
-//                        }
-//                    },
-//                    dismissButton = {
-//                        TextButton(onClick = {
-//                            // User clicked "Open directly" (Marked as Green/Safe, enters 5-link FIFO)
-//                            processAndForward(url, isSuspicious = false, prefs = prefs)
-//                        }) {
-//                            Text(stringResource(id = R.string.open_directly))
-//                        }
-//                    }
-//                )
-//            }
-//        }
-//    }
-
-//    // Handles the database insertion and navigates away immediately
-//    private fun processAndForward(url: String, isSuspicious: Boolean, prefs: android.content.SharedPreferences) {
-//        lifecycleScope.launch {
-//            // Generate a dummy risk score depending on user choice (Red vs Green)
-//            val dummyScore = if (isSuspicious) (70..100).random() else (0..30).random()
-//
-//            val linkEntry = ScannedLink(
-//                url = url,
-//                isSuspicious = isSuspicious,
-//                riskScore = dummyScore,
-//                threatType = if (isSuspicious) "User Flagged / Scan Needed" else null
-//            )
-//
-//            // Save to DB. Safe links are trimmed to 5, Suspicious links are kept forever.
-//            linkDao.insertAndTrim(linkEntry)
-//
-//            // Forward to target browser and close interceptor
-//            forwardToBrowser(url, prefs)
-//            finish()
-//        }
-//    }
-
     // ── Forward to browser ────────────────────────────────────────────────────
-
     private fun forwardToBrowser(url: String, prefs: android.content.SharedPreferences) {
         val browserIntent = Intent(Intent.ACTION_VIEW, Uri.parse(url))
         var targetPackage = prefs.getString("target_browser", "com.android.chrome") ?: "com.android.chrome"
@@ -197,16 +196,11 @@ class LinkInterceptorActivity : ComponentActivity() {
 fun CheckingScreen(url: String) {
     Surface(modifier = Modifier.fillMaxSize()) {
         Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(32.dp),
+            modifier = Modifier.fillMaxSize().padding(32.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center
         ) {
-            CircularProgressIndicator(
-                modifier = Modifier.size(64.dp),
-                strokeWidth = 4.dp
-            )
+            CircularProgressIndicator(modifier = Modifier.size(64.dp), strokeWidth = 4.dp)
             Spacer(modifier = Modifier.height(24.dp))
             Text(
                 text = "🔍 Checking link safety...",
@@ -229,10 +223,10 @@ fun CheckingScreen(url: String) {
 /**
  * Shows the check result with appropriate message and actions.
  *
- * ✅ Whitelisted  → auto-proceeds, shows brief safe message
- * 🚨 Malicious   → blocks, shows warning + explanation + source
- * 🔍 Unknown     → shows "unknown" message, user can proceed
- * ⚠️ Error       → shows error, user can proceed or go back
+ * ✅ Whitelisted → auto-proceeds, shows brief safe message
+ * 🚨 Malicious → blocks, shows warning + explanation + source
+ * 🔍 Unknown → shows "unknown" message, user can proceed
+ * ⚠️ Error → shows error, user can proceed or go back
  */
 @Composable
 fun ResultScreen(
@@ -250,15 +244,12 @@ fun ResultScreen(
 
     Surface(modifier = Modifier.fillMaxSize()) {
         Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(24.dp),
+            modifier = Modifier.fillMaxSize().padding(24.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center
         ) {
             when (result) {
-
-                // ── Malicious ─────────────────────────────────────────────
+                // ── Malicious (DB blacklist OR lexical DANGEROUS) ──────────────
                 is ApiClient.CheckResult.Malicious -> {
                     Text(text = "🚨", fontSize = 64.sp)
                     Spacer(modifier = Modifier.height(16.dp))
@@ -334,7 +325,7 @@ fun ResultScreen(
                     }
                 }
 
-                // ── Unknown ───────────────────────────────────────────────
+                // ── Unknown (should not reach here after Step 2, kept as safety net) ──
                 is ApiClient.CheckResult.Unknown -> {
                     Text(text = "🔍", fontSize = 64.sp)
                     Spacer(modifier = Modifier.height(16.dp))
