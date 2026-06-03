@@ -5,6 +5,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
@@ -36,9 +37,14 @@ fun StatCard(label: String, value: String, color: Color, modifier: Modifier = Mo
 }
 
 @Composable
-fun RecentLinkItem(link: ScannedLink) {
+fun RecentLinkItem(link: ScannedLink, onDelete: () -> Unit) {
     val timeFormat = SimpleDateFormat("HH:mm", Locale.getDefault())
     val timeString = timeFormat.format(Date(link.timestamp))
+
+    // Color is purely based on what the system determined about the link:
+    // red = malicious, green = safe/unknown
+    val indicatorColor = if (link.isSuspicious) Color.Red else Color.Green
+    val indicatorIcon = if (link.isSuspicious) Icons.Default.Warning else Icons.Default.CheckCircle
 
     Row(
         modifier = Modifier
@@ -49,16 +55,13 @@ fun RecentLinkItem(link: ScannedLink) {
         Box(
             modifier = Modifier
                 .size(40.dp)
-                .background(
-                    if (link.isSuspicious) Color.Red.copy(alpha = 0.1f) else Color.Green.copy(alpha = 0.1f),
-                    CircleShape
-                ),
+                .background(indicatorColor.copy(alpha = 0.12f), CircleShape),
             contentAlignment = Alignment.Center
         ) {
             Icon(
-                imageVector = if (link.isSuspicious) Icons.Default.Warning else Icons.Default.CheckCircle,
+                imageVector = indicatorIcon,
                 contentDescription = null,
-                tint = if (link.isSuspicious) Color.Red else Color.Green,
+                tint = indicatorColor,
                 modifier = Modifier.size(20.dp)
             )
         }
@@ -82,6 +85,17 @@ fun RecentLinkItem(link: ScannedLink) {
                 style = MaterialTheme.typography.labelLarge,
                 color = Color.Red,
                 fontWeight = FontWeight.Bold
+            )
+        }
+
+        Spacer(modifier = Modifier.width(8.dp))
+
+        IconButton(onClick = onDelete, modifier = Modifier.size(40.dp)) {
+            Icon(
+                imageVector = Icons.Default.Delete,
+                contentDescription = "Delete from history",
+                tint = Color(0xFFC62828),
+                modifier = Modifier.size(20.dp)
             )
         }
     }

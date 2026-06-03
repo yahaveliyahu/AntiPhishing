@@ -13,7 +13,8 @@ interface LinkDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertLink(link: ScannedLink)
 
-    // Deletes safe links (isSuspicious = 0) that are no longer in the top 5 most recent scans
+    // Deletes safe links (isSuspicious = 0) that are no longer in the top 5 most recent scans.
+    // Suspicious links are kept indefinitely — they are security events worth retaining.
     @Query("DELETE FROM scanned_links WHERE isSuspicious = 0 AND id NOT IN (SELECT id FROM scanned_links ORDER BY timestamp DESC LIMIT 5)")
     suspend fun enforceFifoOnSafeLinks()
 
@@ -27,6 +28,10 @@ interface LinkDao {
     // Retrieve the latest 5 scanned links for the dashboard view
     @Query("SELECT * FROM scanned_links ORDER BY timestamp DESC LIMIT 5")
     fun getRecentLinks(): Flow<List<ScannedLink>>
+
+    // Delete a single history entry by id (used by the per-item delete button)
+    @Query("DELETE FROM scanned_links WHERE id = :id")
+    suspend fun deleteLinkById(id: Long)
 
     // Get the total count of scanned links since a specific timestamp
     @Query("SELECT COUNT(*) FROM scanned_links WHERE timestamp >= :startOfDay")

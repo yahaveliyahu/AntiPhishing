@@ -48,7 +48,6 @@ import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 import javax.inject.Inject
 
-
 @AndroidEntryPoint
 class QrScannerActivity : ComponentActivity() {
 
@@ -72,12 +71,6 @@ class QrScannerActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         cameraExecutor = Executors.newSingleThreadExecutor()
-
-//        setContent {
-//            AntiPhishingTheme {
-//                QrScannerScreen(onClose = { finish() })
-//            }
-//        }
 
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA)
             == PackageManager.PERMISSION_GRANTED
@@ -140,8 +133,15 @@ class QrScannerActivity : ComponentActivity() {
                             matchType = "lexical"
                         )
                     } else {
+                        // Step 3: Forward feature vector to Flask ML server
+                        // TODO: uncomment when ML model is ready
+//                        withContext(Dispatchers.IO) {
+//                            ApiClient.scoreLexical(url, lexical.features)
+//                        }
+                        val riskScore = lexical.features["lexical_risk_score"] ?: 0
                         ApiClient.CheckResult.Unknown(
-                            "Link could not be fully verified. Proceed with caution."
+                            "Lexical analysis complete (score: $riskScore). " +
+                                    "Step 3 ML model not built yet — cannot make final decision."
                         )
                     }
                 } else {
@@ -160,7 +160,7 @@ class QrScannerActivity : ComponentActivity() {
                 ).show()
             }
 
-            // Save to MongoDB via Flask (fire-and-forget — don't block the UI)
+            // Save to MongoDB via Flask when running against real server
             if (!IS_LOCAL) {
                 launch(Dispatchers.IO) {
                     ApiClient.reportQrScan(url, finalResult)
@@ -194,7 +194,7 @@ class QrScannerActivity : ComponentActivity() {
                 confidence = 100,
                 matchType = "local_domain"
             )
-            LocalUrlResult.Unknown -> ApiClient.CheckResult.Unknown(
+            is LocalUrlResult.Unknown -> ApiClient.CheckResult.Unknown(
                 "No match in local whitelist or blacklist."
             )
         }
@@ -206,15 +206,15 @@ class QrScannerActivity : ComponentActivity() {
             isSuspicious = result is ApiClient.CheckResult.Malicious,
             riskScore = when (result) {
                 is ApiClient.CheckResult.Whitelisted -> 0
-                is ApiClient.CheckResult.Malicious -> result.confidence
-                is ApiClient.CheckResult.Unknown -> 50
-                is ApiClient.CheckResult.Error -> 50
+                is ApiClient.CheckResult.Malicious   -> result.confidence
+                is ApiClient.CheckResult.Unknown     -> 50
+                is ApiClient.CheckResult.Error       -> 50
             },
             threatType = when (result) {
-                is ApiClient.CheckResult.Malicious -> result.source
+                is ApiClient.CheckResult.Malicious   -> result.source
                 is ApiClient.CheckResult.Whitelisted,
                 is ApiClient.CheckResult.Unknown,
-                is ApiClient.CheckResult.Error -> null
+                is ApiClient.CheckResult.Error       -> null
             }
         )
         linkDao.insertAndTrim(linkEntry)
@@ -227,10 +227,13 @@ class QrScannerActivity : ComponentActivity() {
             packageManager.getPackageInfo(targetPackage, 0); true
         } catch (_: PackageManager.NameNotFoundException) { false }
         if (!isInstalled) targetPackage = "com.android.chrome"
-        browserIntent.setPackage(targetPackage)
+        browserIntent.`package` = targetPackage
         browserIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-        try { startActivity(browserIntent) } catch (_: Exception) {
-            browserIntent.setPackage(null); startActivity(browserIntent)
+        try {
+            startActivity(browserIntent)
+        } catch (_: Exception) {
+            browserIntent.`package` = null
+            startActivity(browserIntent)
         }
     }
 
@@ -240,7 +243,7 @@ class QrScannerActivity : ComponentActivity() {
     }
 }
 
-// ── Composables ───────────────────────────────────────────────────────────────
+// ── Composables ──────────────────────────────────────────────────────────────
 
 @OptIn(ExperimentalGetImage::class)
 @Composable
@@ -250,6 +253,7 @@ fun QrScannerScreen(
     onQrDetected: (String) -> Unit
 ) {
     val lifecycleOwner = LocalLifecycleOwner.current
+
     Box(modifier = Modifier.fillMaxSize()) {
 
         // Camera preview — PreviewView is created here and wired directly to CameraX
@@ -261,6 +265,7 @@ fun QrScannerScreen(
                 cameraProviderFuture.addListener({
                     val cameraProvider = cameraProviderFuture.get()
 
+                    @Suppress("UsePropertyAccessSyntax")
                     val preview = Preview.Builder().build().also {
                         it.setSurfaceProvider(previewView.surfaceProvider)
                     }
@@ -354,7 +359,9 @@ fun QrScannerScreen(
 fun QrCheckingScreen(url: String) {
     Surface(modifier = Modifier.fillMaxSize()) {
         Column(
-            modifier = Modifier.fillMaxSize().padding(32.dp),
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(32.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center
         ) {
@@ -378,7 +385,7 @@ fun QrCheckingScreen(url: String) {
     }
 }
 
-// Standalone helper so it can be called from inside the Composable
+// Standalone helper — called from inside the Composable where the class scope is unavailable
 private fun extractUrlFromText(text: String): String? {
     if (text.startsWith("http://") || text.startsWith("https://")) return text
     val urlPattern = Regex("""https?://\S+|(?:[a-zA-Z0-9-]+\.)+[a-zA-Z]{2,}(?:/\S*)?""")

@@ -30,8 +30,8 @@ object ApiClient {
 
 //    private const val BASE_URL = "http://10.0.2.2:5000"
 //    private const val BASE_URL = "https://clutter-showplace-festival.ngrok-free.app"
-//    private const val BASE_URL = "http://10.100.102.6:5000"
-    private const val BASE_URL = "http://192.168.222.226:5000"
+    private const val BASE_URL = "http://10.100.102.6:5000"
+//    private const val BASE_URL = "http://192.168.222.226:5000"
     private const val TIMEOUT_MS = 10_000
 
     // ── Result types ──────────────────────────────────────────────────────────

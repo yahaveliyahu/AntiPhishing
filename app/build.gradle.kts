@@ -12,7 +12,7 @@ android {
 
     defaultConfig {
         applicationId = "ronyahav.antiphishing"
-        minSdk = 26
+        minSdk = 29
         targetSdk = 35
         versionCode = 1
         versionName = "1.0"
@@ -54,6 +54,7 @@ dependencies {
     implementation(project(":core:ui"))
     implementation(project(":core:utils"))
     implementation(project(":core:database"))
+    implementation(project(":local"))
 
     // Core AndroidX and AppCompat
     implementation(libs.androidx.core.ktx)
@@ -70,6 +71,15 @@ dependencies {
     implementation(libs.androidx.material.icons.extended)
     implementation(libs.androidx.navigation.compose)
     implementation(libs.androidx.work.runtime.ktx)
+
+    // ML Kit — QR/barcode detection (runs fully on-device, no network needed)
+    implementation("com.google.mlkit:barcode-scanning:17.3.0")
+
+// CameraX — camera preview and frame analysis
+    implementation("androidx.camera:camera-core:1.5.1")
+    implementation("androidx.camera:camera-camera2:1.5.1")
+    implementation("androidx.camera:camera-lifecycle:1.5.1")
+    implementation("androidx.camera:camera-view:1.5.1")
 
     // Hilt and Room with KSP
     implementation(libs.hilt.android)

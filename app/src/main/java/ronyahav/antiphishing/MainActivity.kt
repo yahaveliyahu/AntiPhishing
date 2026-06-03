@@ -90,7 +90,8 @@ fun MainContent(
     onLanguageToggle: () -> Unit,
     onScanQr: () -> Unit,
     context: Context,
-    linkDao: LinkDao) {
+    linkDao: LinkDao
+) {
     val prefs = context.getSharedPreferences("AntiPhishingPrefs", Context.MODE_PRIVATE)
     var isProtectionActive by remember { mutableStateOf(prefs.getBoolean("is_active", false)) }
 
@@ -141,7 +142,6 @@ fun MainContent(
 
                 Spacer(modifier = Modifier.height(24.dp))
 
-                // Translated Stats Section
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                     StatCard(label = stringResource(R.string.stats_scanned_today), value = todayCount.toString(), color = MaterialTheme.colorScheme.primary, modifier = Modifier.weight(1f))
                     StatCard(label = stringResource(R.string.stats_threats_blocked), value = blockedCount.toString(), color = Color.Red, modifier = Modifier.weight(1f))
@@ -169,6 +169,7 @@ fun MainContent(
                 }
 
                 Spacer(modifier = Modifier.height(16.dp))
+
                 // QR Scanner button — disabled visually when protection is off
                 Button(
                     onClick = onScanQr,
@@ -186,13 +187,12 @@ fun MainContent(
                         fontWeight = FontWeight.Bold
                     )
                 }
+
                 Spacer(modifier = Modifier.height(32.dp))
-                // Translated Recent Activity Title
                 Text(stringResource(R.string.recent_activity), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, modifier = Modifier.fillMaxWidth())
                 Spacer(modifier = Modifier.height(8.dp))
             }
 
-            // Recent Links List
             items(recentLinks) { link ->
                 RecentLinkItem(
                     link = link,
@@ -209,7 +209,6 @@ fun MainContent(
 
                 Spacer(modifier = Modifier.height(16.dp))
 
-                // Translated Clear History Button
                 TextButton(
                     onClick = { scope.launch { linkDao.clearHistory() } },
                     colors = ButtonDefaults.textButtonColors(contentColor = Color.Gray)
