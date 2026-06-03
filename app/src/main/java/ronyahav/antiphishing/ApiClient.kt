@@ -9,7 +9,10 @@ import java.net.URL
  * ApiClient
  * Handles HTTP communication with the Flask backend server.
  *
- * Endpoint: POST /api/check
+ * Endpoints used:
+ *   POST /api/check      → Check a URL from link interception
+ *   POST /api/qr/check   → Check a URL decoded from a QR code (same pipeline)
+ *   POST /api/qr/report  → Save a QR scan result to MongoDB
  * Request:  { "url": "https://example.com" }
  * Response: { "is_malicious": bool, "confidence": int, "match_type": str,
  *             "source": str|null, "explanation": str }
@@ -27,7 +30,8 @@ object ApiClient {
 
 //    private const val BASE_URL = "http://10.0.2.2:5000"
 //    private const val BASE_URL = "https://clutter-showplace-festival.ngrok-free.app"
-    private const val BASE_URL = "http://10.100.102.6:5000"
+//    private const val BASE_URL = "http://10.100.102.6:5000"
+    private const val BASE_URL = "http://192.168.222.226:5000"
     private const val TIMEOUT_MS = 10_000
 
     // ── Result types ──────────────────────────────────────────────────────────
@@ -62,7 +66,8 @@ object ApiClient {
     // ── Public API ────────────────────────────────────────────────────────────
 
     /**
-     * Sends the URL to Flask and returns a CheckResult.
+     * Sends the URL to Flask /api/check and returns a CheckResult.
+     * Used by LinkInterceptorActivity for intercepted links.
      * Must be called from a background thread (use coroutines with Dispatchers.IO).
      */
     fun checkUrl(url: String): CheckResult {
@@ -98,10 +103,103 @@ object ApiClient {
     }
 
     /**
-     * Sends the URL + lexical features to Flask for ML scoring (Step 3).
-     * Called after [LexicalAnalyzer] runs, forwarding the feature vector.
+     * Sends a QR-decoded URL to Flask /api/qr/check and returns a CheckResult.
+     * Runs the same pipeline as checkUrl — separate endpoint for clarity and
+     * future QR-specific analytics on the server side.
      * Must be called from a background thread.
      */
+    fun checkQrUrl(url: String): CheckResult {
+        return try {
+            val connection = URL("$BASE_URL/api/qr/check")
+                .openConnection() as HttpURLConnection
+            connection.apply {
+                requestMethod = "POST"
+                connectTimeout = TIMEOUT_MS
+                readTimeout = TIMEOUT_MS
+                doOutput = true
+                setRequestProperty("Content-Type", "application/json")
+                setRequestProperty("Accept", "application/json")
+            }
+            val body = JSONObject().put("url", url).toString()
+            OutputStreamWriter(connection.outputStream).use { it.write(body) }
+            val responseCode = connection.responseCode
+            if (responseCode != HttpURLConnection.HTTP_OK) {
+                return CheckResult.Error("Server returned HTTP $responseCode")
+            }
+            val responseText = connection.inputStream.bufferedReader().readText()
+            connection.disconnect()
+            parseResponse(responseText)
+        } catch (e: Exception) {
+            CheckResult.Error("Could not reach server: ${e.message}")
+        }
+    }
+
+    /**
+     * Saves a QR scan result to MongoDB via POST /api/qr/report.
+     * Called after every QR scan regardless of result, for history and analytics.
+     * Fire-and-forget — failure is silently ignored so it never blocks the UI.
+     * Must be called from a background thread.
+     */
+    fun reportQrScan(url: String, result: CheckResult) {
+        try {
+            val connection = URL("$BASE_URL/api/qr/report")
+                .openConnection() as HttpURLConnection
+            connection.apply {
+                requestMethod = "POST"
+                connectTimeout = TIMEOUT_MS
+                readTimeout = TIMEOUT_MS
+                doOutput = true
+                setRequestProperty("Content-Type", "application/json")
+                setRequestProperty("Accept", "application/json")
+            }
+            val body = JSONObject().apply {
+                put("url", url)
+                put("is_malicious", result is CheckResult.Malicious)
+                put("confidence", when (result) {
+                    is CheckResult.Malicious -> result.confidence
+                    is CheckResult.Whitelisted  -> 100
+                    is CheckResult.Unknown      -> 0
+                    is CheckResult.Error        -> 0
+                })
+                put("source", when (result) {
+                    is CheckResult.Malicious    -> result.source ?: ""
+                    is CheckResult.Whitelisted,
+                    is CheckResult.Unknown,
+                    is CheckResult.Error        -> ""
+                })
+                put("match_type", when (result) {
+                    is CheckResult.Malicious -> result.matchType
+                    is CheckResult.Whitelisted -> "whitelist"
+                    is CheckResult.Unknown -> "unknown"
+                    is CheckResult.Error -> "error"
+                })
+            }.toString()
+            OutputStreamWriter(connection.outputStream).use { it.write(body) }
+            connection.responseCode // trigger the request
+            connection.disconnect()
+        } catch (_: Exception) {
+            // Fire-and-forget — reporting failure should never affect the user
+        }
+    }
+
+    /**
+     * Step 3 — Sends the URL and its lexical feature vector to the Flask ML
+     * model for final classification.
+     *
+     * The call site is already written and commented out in LinkInterceptorActivity
+     * and QrScannerActivity. Uncomment it there when the ML server is ready.
+     *
+     * Called from LinkInterceptorActivity and QrScannerActivity after
+     * LexicalAnalyzer runs and isObviouslyMalicious is false — i.e. when the
+     * lexical analyzer could not make a definitive decision on its own.
+     *
+     * NOT YET ACTIVE — the Flask /api/score endpoint and the ML model have not
+     * been built yet. This function is wired and ready; implement the server
+     * side and remove the TODO comment in the callers to activate Step 3.
+     *
+     * Must be called from a background thread (Dispatchers.IO).
+     */
+
     fun scoreLexical(url: String, features: Map<String, Number>): CheckResult {
         return try {
             val connection = URL("$BASE_URL/api/score")
@@ -139,7 +237,6 @@ object ApiClient {
             CheckResult.Error("Could not reach ML server: ${e.message}")
         }
     }
-
 
     // ── Private helpers ───────────────────────────────────────────────────────
 

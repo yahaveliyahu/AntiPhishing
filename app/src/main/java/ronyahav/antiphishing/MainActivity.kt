@@ -1,12 +1,9 @@
 package ronyahav.antiphishing
 
-import android.Manifest
 import android.app.role.RoleManager
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
-import android.net.Uri
-import android.os.Build
 import android.os.Bundle
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -29,9 +26,10 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.core.content.ContextCompat
+import androidx.compose.ui.unit.sp
+import androidx.core.content.edit
+import androidx.core.net.toUri
 import androidx.core.os.LocaleListCompat
-import androidx.lifecycle.lifecycleScope
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import dagger.hilt.android.AndroidEntryPoint
@@ -42,6 +40,9 @@ import ronyahav.antiphishing.core.utils.BrowserUtils
 import java.util.*
 import java.util.concurrent.TimeUnit
 import javax.inject.Inject
+
+// Set to true to use local URL lists instead of the Flask server (for development/testing)
+const val IS_LOCAL = true
 
 @AndroidEntryPoint
 class MainActivity : AppCompatActivity() {
@@ -56,6 +57,18 @@ class MainActivity : AppCompatActivity() {
             AntiPhishingTheme {
                 MainContent(
                     onLanguageToggle = { toggleLanguage() },
+                    onScanQr = {
+                        val prefs = getSharedPreferences("AntiPhishingPrefs", MODE_PRIVATE)
+                        if (prefs.getBoolean("is_active", false)) {
+                            startActivity(Intent(this, QrScannerActivity::class.java))
+                        } else {
+                            Toast.makeText(
+                                this,
+                                "Enable protection first to scan QR codes",
+                                Toast.LENGTH_SHORT
+                            ).show()
+                        }
+                    },
                     context = this,
                     linkDao = linkDao
                 )
@@ -73,7 +86,11 @@ class MainActivity : AppCompatActivity() {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun MainContent(onLanguageToggle: () -> Unit, context: Context, linkDao: LinkDao) {
+fun MainContent(
+    onLanguageToggle: () -> Unit,
+    onScanQr: () -> Unit,
+    context: Context,
+    linkDao: LinkDao) {
     val prefs = context.getSharedPreferences("AntiPhishingPrefs", Context.MODE_PRIVATE)
     var isProtectionActive by remember { mutableStateOf(prefs.getBoolean("is_active", false)) }
 
@@ -88,7 +105,7 @@ fun MainContent(onLanguageToggle: () -> Unit, context: Context, linkDao: LinkDao
 
     val roleLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) {
         val roleManager = context.getSystemService(Context.ROLE_SERVICE) as RoleManager
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q && roleManager.isRoleHeld(RoleManager.ROLE_BROWSER)) {
+        if (roleManager.isRoleHeld(RoleManager.ROLE_BROWSER)) {
             toggleSystemState(true, context, prefs)
             isProtectionActive = true
         }
@@ -137,7 +154,7 @@ fun MainContent(onLanguageToggle: () -> Unit, context: Context, linkDao: LinkDao
                     Row(modifier = Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
                         Text(stringResource(R.string.active_protection), style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
                         Switch(checked = isProtectionActive, onCheckedChange = { isChecked ->
-                            if (isChecked && Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                            if (isChecked) {
                                 val roleManager = context.getSystemService(Context.ROLE_SERVICE) as RoleManager
                                 if (!roleManager.isRoleHeld(RoleManager.ROLE_BROWSER)) {
                                     saveCurrentDefaultBrowser(context, prefs)
@@ -151,6 +168,24 @@ fun MainContent(onLanguageToggle: () -> Unit, context: Context, linkDao: LinkDao
                     }
                 }
 
+                Spacer(modifier = Modifier.height(16.dp))
+                // QR Scanner button — disabled visually when protection is off
+                Button(
+                    onClick = onScanQr,
+                    modifier = Modifier.fillMaxWidth().height(52.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = if (isProtectionActive)
+                            MaterialTheme.colorScheme.primary
+                        else
+                            Color.Gray
+                    )
+                ) {
+                    Text(
+                        text = "📷  Scan QR Code to check",
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
                 Spacer(modifier = Modifier.height(32.dp))
                 // Translated Recent Activity Title
                 Text(stringResource(R.string.recent_activity), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, modifier = Modifier.fillMaxWidth())
@@ -159,7 +194,10 @@ fun MainContent(onLanguageToggle: () -> Unit, context: Context, linkDao: LinkDao
 
             // Recent Links List
             items(recentLinks) { link ->
-                RecentLinkItem(link)
+                RecentLinkItem(
+                    link = link,
+                    onDelete = { scope.launch { linkDao.deleteLinkById(link.id) } }
+                )
             }
 
             item {
@@ -187,7 +225,7 @@ fun MainContent(onLanguageToggle: () -> Unit, context: Context, linkDao: LinkDao
 }
 
 private fun toggleSystemState(isActive: Boolean, context: Context, prefs: android.content.SharedPreferences) {
-    prefs.edit().putBoolean("is_active", isActive).apply()
+    prefs.edit { putBoolean("is_active", isActive) }
     val workManager = WorkManager.getInstance(context)
     if (isActive) {
         val debugWorkRequest = PeriodicWorkRequestBuilder<DebugWorker>(15, TimeUnit.MINUTES).build()
@@ -198,10 +236,10 @@ private fun toggleSystemState(isActive: Boolean, context: Context, prefs: androi
 }
 
 private fun saveCurrentDefaultBrowser(context: Context, prefs: android.content.SharedPreferences) {
-    val browserIntent = Intent(Intent.ACTION_VIEW, Uri.parse("http://www.google.com"))
+    val browserIntent = Intent(Intent.ACTION_VIEW, "http://www.google.com".toUri())
     val resolveInfo = context.packageManager.resolveActivity(browserIntent, PackageManager.MATCH_DEFAULT_ONLY)
     val defaultPackage = resolveInfo?.activityInfo?.packageName
     if (defaultPackage != null && defaultPackage != context.packageName && defaultPackage != "android") {
-        prefs.edit().putString("target_browser", defaultPackage).apply()
+        prefs.edit { putString("target_browser", defaultPackage) }
     }
 }
