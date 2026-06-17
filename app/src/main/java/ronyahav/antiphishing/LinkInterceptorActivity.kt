@@ -2,7 +2,10 @@ package ronyahav.antiphishing
 
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import android.widget.Toast
 import androidx.activity.ComponentActivity
@@ -26,14 +29,20 @@ import ronyahav.local.LocalUrlResult
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
 import ronyahav.antiphishing.core.database.LinkDao
 import ronyahav.antiphishing.core.database.ScannedLink
 import ronyahav.antiphishing.core.ui.AntiPhishingTheme
 import javax.inject.Inject
-
+import kotlin.coroutines.resume
+import kotlin.coroutines.resumeWithException
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import com.google.mlkit.vision.barcode.BarcodeScanning
+import com.google.mlkit.vision.barcode.common.Barcode
+import com.google.mlkit.vision.common.InputImage
+import kotlin.collections.firstNotNullOfOrNull
 
 @AndroidEntryPoint
 class LinkInterceptorActivity : ComponentActivity() {
@@ -44,9 +53,25 @@ class LinkInterceptorActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        val url = extractIncomingUrl(intent)
         val prefs = getSharedPreferences("AntiPhishingPrefs", MODE_PRIVATE)
         val isActive = prefs.getBoolean("is_active", false)
+
+        // ── Detect intent type ────────────────────────────────────────────────
+        val isImageIntent = isImageSharingIntent(intent)
+
+        if (isImageIntent) {
+            // Image shared or opened with AntiPhishing — scan it for QR codes
+            if (!isActive) {
+                Toast.makeText(this, "Enable protection first", Toast.LENGTH_SHORT).show()
+                finish()
+                return
+            }
+            handleImageIntent(intent, prefs)
+            return
+        }
+
+        // ── Standard URL interception path ────────────────────────
+        val url = extractIncomingUrl(intent)
 
         // If protection is off or no URL — forward directly
         if (!isActive || url == null) {
@@ -56,10 +81,110 @@ class LinkInterceptorActivity : ComponentActivity() {
         }
 
         // Show loading state while checking the URL
-        setContent {
-            AntiPhishingTheme { CheckingScreen(url = url) }
+        setContent { AntiPhishingTheme { CheckingScreen(url = url) } }
+        runUrlPipeline(url, prefs)
+    }
+
+    // ── Image intent handling ─────────────────────────────────────────────────
+
+    private fun isImageSharingIntent(intent: Intent): Boolean {
+        val mime = intent.type ?: return false
+        if (!mime.startsWith("image/")) return false
+        return intent.action == Intent.ACTION_SEND ||
+                intent.action == Intent.ACTION_VIEW
+    }
+
+    private fun handleImageIntent(intent: Intent, prefs: android.content.SharedPreferences) {
+        // Resolve the image URI — differs between ACTION_SEND and ACTION_VIEW
+        val imageUri: Uri? = when (intent.action) {
+            Intent.ACTION_SEND -> {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                    intent.getParcelableExtra(Intent.EXTRA_STREAM, Uri::class.java)
+                } else {
+                    @Suppress("DEPRECATION")
+                    intent.getParcelableExtra(Intent.EXTRA_STREAM)
+                }
+            }
+
+            Intent.ACTION_VIEW -> intent.data
+            else -> null
         }
 
+        if (imageUri == null) {
+            Toast.makeText(this, "Could not read the shared image", Toast.LENGTH_SHORT).show()
+            finish()
+            return
+        }
+
+        // Show scanning screen while ML Kit runs
+        setContent { AntiPhishingTheme { ScanningImageScreen() } }
+
+        lifecycleScope.launch {
+            // Decode bitmap on IO thread
+            val bitmap: Bitmap? = withContext(Dispatchers.IO) {
+                try {
+                    contentResolver.openInputStream(imageUri)?.use { stream ->
+                        BitmapFactory.decodeStream(stream)
+                    }
+                } catch (_: Exception) {
+                    null
+                }
+            }
+
+            if (bitmap == null) {
+                Toast.makeText(
+                    this@LinkInterceptorActivity,
+                    "Could not decode the image",
+                    Toast.LENGTH_SHORT
+                ).show()
+                finish()
+                return@launch
+            }
+
+            // Run ML Kit barcode scanning on background thread
+            val url: String? = withContext(Dispatchers.Default) {
+                scanBitmapForQrUrl(bitmap)
+            }
+
+            if (url == null) {
+                // No QR code found in the image
+                setContent {
+                    AntiPhishingTheme {
+                        NoQrFoundScreen(onClose = { finish() })
+                    }
+                }
+                return@launch
+            }
+
+            // QR found — run it through the standard pipeline
+            setContent { AntiPhishingTheme { CheckingScreen(url = url) } }
+            runUrlPipeline(url, prefs)
+        }
+    }
+
+    private suspend fun scanBitmapForQrUrl(bitmap: Bitmap): String? {
+        val image = InputImage.fromBitmap(bitmap, 0)
+        val scanner = BarcodeScanning.getClient()
+        return try {
+            val barcodes: List<Barcode> = suspendCancellableCoroutine { cont ->
+                scanner.process(image)
+                    .addOnSuccessListener { cont.resume(it) }
+                    .addOnFailureListener { cont.resumeWithException(it) }
+            }
+            barcodes.firstNotNullOfOrNull { barcode ->
+                if (barcode.valueType != Barcode.TYPE_URL &&
+                    barcode.valueType != Barcode.TYPE_TEXT
+                ) return@firstNotNullOfOrNull null
+                barcode.rawValue?.let { extractUrlFromText(it) }
+            }
+        } catch (_: Exception) {
+            null
+        } finally {
+            scanner.close()
+        }
+    }
+
+    private fun runUrlPipeline(url: String, prefs: android.content.SharedPreferences) {
         lifecycleScope.launch {
             // Step 1: Check URL against MongoDB via Flask
             val serverResult = if (IS_LOCAL) {
@@ -71,51 +196,52 @@ class LinkInterceptorActivity : ComponentActivity() {
             }
 
             // Step 2: Lexical analysis for Unknown links
-            val finalResult: ApiClient.CheckResult = if (serverResult is ApiClient.CheckResult.Unknown) {
-                val lexical = withContext(Dispatchers.Default) {
-                    LexicalAnalyzer.analyze(url)
-                }
-
-                if (lexical.isObviouslyMalicious) {
-                    // Unambiguous signal (e.g. @ symbol, javascript: URI, data: URI).
-                    // Block immediately — no ML server call needed.
-                    ApiClient.CheckResult.Malicious(
-                        explanation = buildExplanation(lexical),
-                        source = "Lexical Analysis",
-                        confidence = 95,
-                        matchType = "lexical"
-                    )
-                } else {
-                    // Step 3 (ML model) not built yet.
-                    // Show a Toast to confirm the lexical analyzer ran successfully,
-                    // then allow the link through so testing is not blocked.
-                    val riskScore = lexical.features["lexical_risk_score"] ?: 0
-                    withContext(Dispatchers.Main) {
-                        Toast.makeText(
-                            this@LinkInterceptorActivity,
-                            "Step 3 not built yet. Lexical analysis complete. Risk score: $riskScore",
-                            Toast.LENGTH_LONG
-                        ).show()
+            val finalResult: ApiClient.CheckResult =
+                if (serverResult is ApiClient.CheckResult.Unknown) {
+                    val lexical = withContext(Dispatchers.Default) {
+                        LexicalAnalyzer.analyze(url)
                     }
-                    // Return Unknown so the user sees the neutral screen and can choose to proceed
-                    ApiClient.CheckResult.Unknown(
-                        "Lexical analysis complete (score: $riskScore). " +
-                                "Step 3 ML model not built yet — cannot make final decision."
-                    )
-                }
+
+                    if (lexical.isObviouslyMalicious) {
+                        // Unambiguous signal (e.g. @ symbol, javascript: URI, data: URI).
+                        // Block immediately — no ML server call needed.
+                        ApiClient.CheckResult.Malicious(
+                            explanation = buildExplanation(lexical),
+                            source = "Lexical Analysis",
+                            confidence = 95,
+                            matchType = "lexical"
+                        )
+                    } else {
+                        // Step 3 (ML model) not built yet.
+                        // Show a Toast to confirm the lexical analyzer ran successfully,
+                        // then allow the link through so testing is not blocked.
+                        val riskScore = lexical.features["lexical_risk_score"] ?: 0
+                        withContext(Dispatchers.Main) {
+                            Toast.makeText(
+                                this@LinkInterceptorActivity,
+                                "Step 3 not built yet. Lexical analysis complete. Risk score: $riskScore",
+                                Toast.LENGTH_LONG
+                            ).show()
+                        }
+                        // Return Unknown so the user sees the neutral screen and can choose to proceed
+                        ApiClient.CheckResult.Unknown(
+                            "Lexical analysis complete (score: $riskScore). " +
+                                    "Step 3 ML model not built yet — cannot make final decision."
+                        )
+                    }
 
 
-                // -------------------------------------------------------------------------------------
+                    // -------------------------------------------------------------------------------------
 
-                // Forward feature vector to Flask ML server (Step 3).
-                // The ML model makes the actual classification decision.
+                    // Forward feature vector to Flask ML server (Step 3).
+                    // The ML model makes the actual classification decision.
 //                    withContext(Dispatchers.IO) {
 //                        ApiClient.scoreLexical(url, lexical.features)
 //                    }
 //                }
-            } else {
-                serverResult
-            }
+                } else {
+                    serverResult
+                }
 
             // Save result to local Room DB immediately — the link is what it is,
             // regardless of what the user decides to do next.
@@ -143,6 +269,7 @@ class LinkInterceptorActivity : ComponentActivity() {
             }
         }
     }
+
 
     // ── Helpers ───────────────────────────────────────────────────────────────
 
@@ -279,6 +406,68 @@ fun CheckingScreen(url: String) {
                 textAlign = TextAlign.Center,
                 fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace
             )
+        }
+    }
+}
+
+@Composable
+fun ScanningImageScreen() {
+    Surface(modifier = Modifier.fillMaxSize()) {
+        Column(
+            modifier = Modifier.fillMaxSize().padding(32.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center
+        ) {
+            CircularProgressIndicator(modifier = Modifier.size(64.dp), strokeWidth = 4.dp)
+            Spacer(modifier = Modifier.height(24.dp))
+            Text(
+                text = "🔍 Scanning image for QR codes...",
+                fontSize = 20.sp,
+                fontWeight = FontWeight.Bold,
+                textAlign = TextAlign.Center
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+            Text(
+                text = "AntiPhishing is looking for QR codes in this image",
+                fontSize = 14.sp,
+                color = Color.Gray,
+                textAlign = TextAlign.Center
+            )
+        }
+    }
+}
+
+@Composable
+fun NoQrFoundScreen(onClose: () -> Unit) {
+    Surface(modifier = Modifier.fillMaxSize()) {
+        Column(
+            modifier = Modifier.fillMaxSize().padding(32.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center
+        ) {
+            Text(text = "🔍", fontSize = 56.sp)
+            Spacer(modifier = Modifier.height(20.dp))
+            Text(
+                text = "No QR Code Found",
+                fontSize = 22.sp,
+                fontWeight = FontWeight.Bold,
+                textAlign = TextAlign.Center
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+            Text(
+                text = "AntiPhishing could not find a QR code containing a URL in this image.",
+                fontSize = 15.sp,
+                color = Color.Gray,
+                textAlign = TextAlign.Center,
+                lineHeight = 22.sp
+            )
+            Spacer(modifier = Modifier.height(32.dp))
+            Button(
+                onClick = onClose,
+                modifier = Modifier.fillMaxWidth().height(52.dp)
+            ) {
+                Text("Close", fontSize = 16.sp, fontWeight = FontWeight.Bold)
+            }
         }
     }
 }

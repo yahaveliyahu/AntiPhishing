@@ -74,6 +74,7 @@ dependencies {
 
     // ML Kit — QR/barcode detection (runs fully on-device, no network needed)
     implementation("com.google.mlkit:barcode-scanning:17.3.0")
+    implementation("com.google.android.gms:play-services-tasks:18.2.0")
 
 // CameraX — camera preview and frame analysis
     implementation("androidx.camera:camera-core:1.5.1")

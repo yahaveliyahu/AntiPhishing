@@ -5,6 +5,7 @@
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.CAMERA" />
+    <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
 
     <uses-feature android:name="android.hardware.camera" android:required="false" />
 
@@ -45,6 +46,7 @@
             android:exported="true"
             android:theme="@android:style/Theme.Translucent.NoTitleBar">
 
+            <!-- 1. Intercept http/https links clicked anywhere on the device -->
             <intent-filter android:autoVerify="true">
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
@@ -53,20 +55,38 @@
                 <data android:scheme="https" />
             </intent-filter>
 
+            <!-- 2. Register as a browser (required for ROLE_BROWSER) -->
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.APP_BROWSER" />
                 <category android:name="android.intent.category.DEFAULT" />
             </intent-filter>
 
-        </activity>
+            <!-- 3. Share image → AntiPhishing scans the image for a QR code
+                    Triggered by: long-press image in WhatsApp/Gallery/Chrome → Share → AntiPhishing -->
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="image/*" />
+            </intent-filter>
 
-        <activity
-            android:name=".QrScannerActivity"
-            android:exported="false"
-            android:screenOrientation="fullSensor"
-            android:theme="@style/Theme.AppCompat.DayNight.NoActionBar" />
+            <!-- 4. "Open with" AntiPhishing when viewing an image that contains a QR
+               Triggered by: long-press image → Open with → AntiPhishing
+               Also triggered by Google Lens / Android QR shortcuts that produce an image URI -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="image/*" />
+            </intent-filter>
 
-    </application>
+</activity>
+
+<activity
+android:name=".QrScannerActivity"
+android:exported="false"
+android:screenOrientation="fullSensor"
+android:theme="@style/Theme.AppCompat.DayNight.NoActionBar" />
+
+</application>
 
 </manifest>
