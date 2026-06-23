@@ -27,8 +27,14 @@ object ApiClient {
 
 //    private const val BASE_URL = "http://10.0.2.2:5000"
 //    private const val BASE_URL = "https://clutter-showplace-festival.ngrok-free.app"
-    private const val BASE_URL = "http://10.100.102.6:5000"
-    private const val TIMEOUT_MS = 10_000
+//    private const val BASE_URL = "http://10.100.102.6:5000"
+    // Production (Render). Replace with your real service URL after deploying.
+    private const val BASE_URL = "https://antiphishing-backend.onrender.com"
+
+    // Connect timeout stays short, but read timeout is long: Render's free tier
+    // sleeps after ~15 min idle and takes ~50s to wake on the first request.
+    private const val CONNECT_TIMEOUT_MS = 15_000
+    private const val TIMEOUT_MS = 60_000
 
     // ── Result types ──────────────────────────────────────────────────────────
 
@@ -72,7 +78,7 @@ object ApiClient {
 
             connection.apply {
                 requestMethod = "POST"
-                connectTimeout = TIMEOUT_MS
+                connectTimeout = CONNECT_TIMEOUT_MS
                 readTimeout = TIMEOUT_MS
                 doOutput = true
                 setRequestProperty("Content-Type", "application/json")
@@ -109,7 +115,7 @@ object ApiClient {
 
             connection.apply {
                 requestMethod = "POST"
-                connectTimeout = TIMEOUT_MS
+                connectTimeout = CONNECT_TIMEOUT_MS
                 readTimeout = TIMEOUT_MS
                 doOutput = true
                 setRequestProperty("Content-Type", "application/json")
