@@ -19,17 +19,7 @@ import java.net.URL
  * when the server returns [Unknown]. They are never returned by the server.
  */
 object ApiClient {
-
-    // ── IMPORTANT: Change this to your Flask server IP before testing ─────────
-    // Android emulator → http://10.0.2.2:5000
-    // Real device on same WiFi → http://YOUR_COMPUTER_IP:5000
-    // Production server → https://your-domain.com
-
-//    private const val BASE_URL = "http://10.0.2.2:5000"
-//    private const val BASE_URL = "https://clutter-showplace-festival.ngrok-free.app"
-//    private const val BASE_URL = "http://10.100.102.6:5000"
-    // Production (Render). Replace with your real service URL after deploying.
-    private const val BASE_URL = "https://antiphishing-backend.onrender.com"
+ private const val BASE_URL = "https://antiphishing-backend.onrender.com"
 
     // Connect timeout stays short, but read timeout is long: Render's free tier
     // sleeps after ~15 min idle and takes ~50s to wake on the first request.
