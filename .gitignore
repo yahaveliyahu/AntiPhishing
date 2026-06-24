@@ -13,3 +13,25 @@
 .externalNativeBuild
 .cxx
 local.properties
+
+# ── Signing keys & secrets — NEVER commit these ──────────────────
+*.jks
+*.keystore
+*.p12
+keystore.properties
+signing.properties
+
+# ── Build artifacts (rebuilt locally; keep out of version control) ─
+*.apk
+*.aab
+*.ap_
+/app/release/
+build/
+.kotlin/
+
+# ── OS / IDE noise ───────────────────────────────────────────────
+Thumbs.db
+*.log
+*.hprof
+/.idea/deploymentTargetDropDown.xml
+/.idea/deploymentTargetSelector.xml

@@ -77,21 +77,11 @@ class LinkInterceptorActivity : ComponentActivity() {
                         matchType = "lexical"
                     )
                 } else {
-                    // Step 3 (ML model) not built yet.
-                    // Show a Toast to confirm the lexical analyzer ran successfully,
-                    // then allow the link through so testing is not blocked.
-                    val riskScore = lexical.features["lexical_risk_score"] ?: 0
-                    withContext(Dispatchers.Main) {
-                        Toast.makeText(
-                            this@LinkInterceptorActivity,
-                            "Step 3 not built yet. Lexical analysis complete. Risk score: $riskScore",
-                            Toast.LENGTH_LONG
-                        ).show()
-                    }
-                    // Return Unknown so the user sees the neutral screen and can choose to proceed
+                    // The link is not in our database and shows no obvious malicious
+                    // patterns. Surface it as "unknown" and let the user decide.
                     ApiClient.CheckResult.Unknown(
-                        "Lexical analysis complete (score: $riskScore). " +
-                                "Step 3 ML model not built yet — cannot make final decision."
+                        "This link is not in our database. We did not find obvious " +
+                                "signs of phishing, but we could not fully verify it."
                     )
                 }
 

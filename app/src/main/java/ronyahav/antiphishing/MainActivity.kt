@@ -32,15 +32,12 @@ import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.core.os.LocaleListCompat
 import androidx.lifecycle.lifecycleScope
-import androidx.work.PeriodicWorkRequestBuilder
-import androidx.work.WorkManager
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.launch
 import ronyahav.antiphishing.core.database.LinkDao
 import ronyahav.antiphishing.core.ui.*
 import ronyahav.antiphishing.core.utils.BrowserUtils
 import java.util.*
-import java.util.concurrent.TimeUnit
 import javax.inject.Inject
 
 @AndroidEntryPoint
@@ -187,14 +184,9 @@ fun MainContent(onLanguageToggle: () -> Unit, context: Context, linkDao: LinkDao
 }
 
 private fun toggleSystemState(isActive: Boolean, context: Context, prefs: android.content.SharedPreferences) {
+    // Protection is driven entirely by the browser role + this flag, which
+    // LinkInterceptorActivity reads on every intercepted link.
     prefs.edit().putBoolean("is_active", isActive).apply()
-    val workManager = WorkManager.getInstance(context)
-    if (isActive) {
-        val debugWorkRequest = PeriodicWorkRequestBuilder<DebugWorker>(15, TimeUnit.MINUTES).build()
-        workManager.enqueueUniquePeriodicWork("DebugAliveWork", androidx.work.ExistingPeriodicWorkPolicy.KEEP, debugWorkRequest)
-    } else {
-        workManager.cancelUniqueWork("DebugAliveWork")
-    }
 }
 
 private fun saveCurrentDefaultBrowser(context: Context, prefs: android.content.SharedPreferences) {
