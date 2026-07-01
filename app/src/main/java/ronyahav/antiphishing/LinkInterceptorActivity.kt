@@ -20,7 +20,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.lifecycleScope
@@ -198,6 +201,7 @@ class LinkInterceptorActivity : ComponentActivity() {
             // Step 2: Lexical analysis for Unknown links
             val finalResult: ApiClient.CheckResult =
                 if (serverResult is ApiClient.CheckResult.Unknown) {
+                    // Step 2: Lexical Analyzer
                     val lexical = withContext(Dispatchers.Default) {
                         LexicalAnalyzer.analyze(url)
                     }
@@ -212,33 +216,11 @@ class LinkInterceptorActivity : ComponentActivity() {
                             matchType = "lexical"
                         )
                     } else {
-                        // Step 3 (ML model) not built yet.
-                        // Show a Toast to confirm the lexical analyzer ran successfully,
-                        // then allow the link through so testing is not blocked.
-                        val riskScore = lexical.features["lexical_risk_score"] ?: 0
-                        withContext(Dispatchers.Main) {
-                            Toast.makeText(
-                                this@LinkInterceptorActivity,
-                                "Step 3 not built yet. Lexical analysis complete. Risk score: $riskScore",
-                                Toast.LENGTH_LONG
-                            ).show()
+                        // Step 3 — Send URL + lexical features to Flask ML model
+                        withContext(Dispatchers.IO) {
+                            ApiClient.scoreLexical(url, lexical.features)
                         }
-                        // Return Unknown so the user sees the neutral screen and can choose to proceed
-                        ApiClient.CheckResult.Unknown(
-                            "Lexical analysis complete (score: $riskScore). " +
-                                    "Step 3 ML model not built yet — cannot make final decision."
-                        )
                     }
-
-
-                    // -------------------------------------------------------------------------------------
-
-                    // Forward feature vector to Flask ML server (Step 3).
-                    // The ML model makes the actual classification decision.
-//                    withContext(Dispatchers.IO) {
-//                        ApiClient.scoreLexical(url, lexical.features)
-//                    }
-//                }
                 } else {
                     serverResult
                 }
@@ -593,12 +575,16 @@ fun ResultScreen(
 
                                     Spacer(modifier = Modifier.height(14.dp))
 
+                                    CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
                                     Text(
                                         text = result.explanation,
                                         fontSize = 15.sp,
                                         lineHeight = 22.sp,
-                                        color = Color(0xFF333333)
+                                        color = Color(0xFF333333),
+                                        textAlign = TextAlign.Start,
+                                        modifier = Modifier.fillMaxWidth()
                                     )
+                                }
                                     if (result.source != null) {
                                         Spacer(modifier = Modifier.height(10.dp))
                                         Surface(
@@ -739,14 +725,18 @@ fun ResultScreen(
 
                                     Spacer(modifier = Modifier.height(14.dp))
 
+                                    CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
                                     Text(
                                         text = result.explanation,
                                         fontSize = 15.sp,
                                         lineHeight = 22.sp,
-                                        color = Color(0xFF333333)
+                                        color = Color(0xFF333333),
+                                        textAlign = TextAlign.Start,
+                                        modifier = Modifier.fillMaxWidth()
                                     )
                                 }
                             }
+                        }
 
                             Spacer(modifier = Modifier.height(24.dp))
 

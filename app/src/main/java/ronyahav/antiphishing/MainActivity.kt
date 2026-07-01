@@ -42,7 +42,7 @@ import java.util.concurrent.TimeUnit
 import javax.inject.Inject
 
 // Set to true to use local URL lists instead of the Flask server (for development/testing)
-const val IS_LOCAL = true
+const val IS_LOCAL = false
 
 @AndroidEntryPoint
 class MainActivity : AppCompatActivity() {
