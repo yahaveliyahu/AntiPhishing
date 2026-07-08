@@ -20,7 +20,8 @@ object DatabaseModule {
             context,
             AppDatabase::class.java,
             "antiphishing_db"
-        ).build()
+        ).addMigrations(MIGRATION_1_2)
+            .build()
     }
 
     @Provides

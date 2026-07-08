@@ -13,14 +13,13 @@ object LocalUrlLists {
         "github.com"
     )
 
-    private val blacklistDomains = setOf(
-        "bad.test",
-        "safe-test-phishing.local",
-        "fake-login-test.com",
-        "malicious-demo.invalid",
-        "bank-security-check.example",
-        "verify-account-now.test",
-        "phishing-simulation-only.invalid"
+    private val blacklistDomains = mapOf(
+        "bad.test" to "Flagged as a known-malicious domain — not associated with any legitimate registered business or service.",
+        "safe-test-phishing.local" to "Domain name itself contains the word \"phishing\" and does not correspond to a registered business — consistent with disposable attack infrastructure.",
+        "fake-login-test.com" to "Domain name combines \"fake\" and \"login\" — consistent with a credential-harvesting page impersonating a legitimate sign-in portal.",
+        "malicious-demo.invalid" to "Domain name explicitly signals malicious intent and does not correspond to any legitimate registered service.",
+        "bank-security-check.example" to "Domain combines banking and security-alert language (\"bank\", \"security\", \"check\") — a classic pattern used to impersonate a financial institution's security notices.",
+        "phishing-simulation-only.invalid" to "Domain name explicitly references phishing and does not correspond to any real registered business."
     )
 
     fun check(url: String): LocalUrlResult {
@@ -33,11 +32,11 @@ object LocalUrlLists {
             )
         }
 
-        val matchedBlacklist = blacklistDomains.firstOrNull { host.matchesDomain(it) }
+        val matchedBlacklist = blacklistDomains.keys.firstOrNull { host.matchesDomain(it) }
         if (matchedBlacklist != null) {
             return LocalUrlResult.Blacklisted(
                 domain = matchedBlacklist,
-                explanation = "Local blacklist match. This is a safe test domain for checking the warning screen."
+                explanation = blacklistDomains.getValue(matchedBlacklist)
             )
         }
 

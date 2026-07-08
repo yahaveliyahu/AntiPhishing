@@ -76,7 +76,18 @@ fun RecentLinkItem(link: ScannedLink, onDelete: () -> Unit) {
                 overflow = TextOverflow.Ellipsis,
                 fontWeight = FontWeight.Medium
             )
-            Text(text = timeString, style = MaterialTheme.typography.labelSmall, color = Color.Gray)
+            val explanation = link.explanation
+            if (link.isSuspicious && !explanation.isNullOrBlank()) {
+                Text(
+                    text = explanation,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = Color.Gray,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
+                )
+            } else {
+                Text(text = timeString, style = MaterialTheme.typography.labelSmall, color = Color.Gray)
+            }
         }
 
         if (link.isSuspicious) {

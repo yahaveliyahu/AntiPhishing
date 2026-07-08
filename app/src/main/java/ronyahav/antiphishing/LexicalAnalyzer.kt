@@ -41,9 +41,13 @@ import kotlin.math.ln
  *   • features   — numeric feature vector forwarded to the Flask ML model
  *
  * ── Integration point ────────────────────────────────────────────────────────
- * Called from [LinkInterceptorActivity] when [ApiClient] returns [CheckResult.Unknown].
- * If [isObviouslyMalicious] → block immediately.
- * Otherwise → forward [features] to Flask /api/score and let the ML model decide.
+ * Called from [LinkInterceptorActivity] and [QrScannerActivity] when [ApiClient]
+ * returns [CheckResult.Unknown] (i.e. the URL was not found in MongoDB):
+ *   • isObviouslyMalicious → block immediately; ML model is still called for a
+ *     risk percentage, but the explanation/source stays attributed to this analyzer.
+ *   • isObviouslySafe      → clear immediately; no ML call needed.
+ *   • otherwise            → forward [features] to Flask /api/score and let the
+ *     ML model make the final call.
  */
 object LexicalAnalyzer {
 
@@ -51,6 +55,7 @@ object LexicalAnalyzer {
 
     data class LexicalResult(
         val isObviouslyMalicious: Boolean,  // True ONLY for unambiguous signals — blocks without ML
+        val isObviouslySafe: Boolean,       // True ONLY when zero risk signals triggered — clears without ML
         val flags: List<String>,            // Human-readable explanations for the user
         val features: Map<String, Number>   // Numeric feature vector for the ML server
     )
@@ -397,9 +402,14 @@ object LexicalAnalyzer {
                 url.contains('\t')  || url.contains('\n')  || url.contains('\r')
         if (hasControlChars) { score += 30; obviousKillers++; flags += "🚨 Tab or newline character in URL — injected to confuse security scanners while browsers silently ignore them" }
 
-        // OBVIOUS KILLER: Double URL encoding — %25XX decodes to %XX which decodes again
+        // Double URL encoding — %25XX decodes to %XX which decodes again.
+        // NOT an obvious killer: some legitimate systems (e.g. SAP job listings
+        // with parenthetical text in titles, like "(PM)") double-encode
+        // characters as a side effect of their own URL generation. Still
+        // scored as a signal, but no longer an automatic block — the ML
+        // model gets to weigh it alongside everything else instead.
         val hasDoubleEncoding = Regex("%25[0-9A-Fa-f]{2}").containsMatchIn(url)
-        if (hasDoubleEncoding) { score += 25; obviousKillers++; flags += "🚨 Double URL encoding detected — attackers encode characters twice to bypass security filters that only decode once" }
+        if (hasDoubleEncoding) { score += 25; flags += "⚠️ Double URL encoding detected — can indicate an attempt to bypass security filters, but also occurs in some legitimate systems' URL generation" }
 
         // Backslash in URL — some browsers treat \ as /
         val hasBackslash = url.contains('\\')
@@ -509,6 +519,7 @@ object LexicalAnalyzer {
 
         return LexicalResult(
             isObviouslyMalicious = obviousKillers > 0,
+            isObviouslySafe = obviousKillers == 0 && finalScore == 0,
             flags = flags,
             features = features
         )

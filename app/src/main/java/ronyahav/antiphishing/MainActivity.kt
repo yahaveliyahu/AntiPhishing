@@ -20,11 +20,17 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Language
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.edit
@@ -42,7 +48,7 @@ import java.util.concurrent.TimeUnit
 import javax.inject.Inject
 
 // Set to true to use local URL lists instead of the Flask server (for development/testing)
-const val IS_LOCAL = false
+const val IS_LOCAL = true
 
 @AndroidEntryPoint
 class MainActivity : AppCompatActivity() {
@@ -103,6 +109,7 @@ fun MainContent(
 
     val installedBrowsers = remember { BrowserUtils.getInstalledBrowsers(context) }
     val scope = rememberCoroutineScope()
+    var manualUrl by remember { mutableStateOf("") }
 
     val roleLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) {
         val roleManager = context.getSystemService(Context.ROLE_SERVICE) as RoleManager
@@ -186,6 +193,97 @@ fun MainContent(
                         fontSize = 16.sp,
                         fontWeight = FontWeight.Bold
                     )
+                }
+
+                Spacer(modifier = Modifier.height(16.dp))
+
+                // Manual URL check
+                CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f))
+                    ) {
+                        Column(modifier = Modifier.padding(16.dp)) {
+                            Text(
+                                text = "Check a link manually",
+                                style = MaterialTheme.typography.titleMedium,
+                                modifier = Modifier.padding(bottom = 8.dp)
+                            )
+                            OutlinedTextField(
+                                value = manualUrl,
+                                onValueChange = { manualUrl = it },
+                                placeholder = { Text("Paste or type a URL here") },
+                                modifier = Modifier.fillMaxWidth(),
+                                singleLine = true,
+                                keyboardOptions = KeyboardOptions(
+                                    keyboardType = KeyboardType.Uri,
+                                    imeAction = ImeAction.Go
+                                ),
+                                keyboardActions = KeyboardActions(
+                                    onGo = {
+                                        if (!isProtectionActive) {
+                                            Toast.makeText(
+                                                context,
+                                                "Enable protection first to check links",
+                                                Toast.LENGTH_SHORT
+                                            ).show()
+                                            return@KeyboardActions
+                                        }
+                                        val url = manualUrl.trim()
+                                        if (url.isEmpty()) {
+                                            Toast.makeText(
+                                                context,
+                                                "Enter a link to check first",
+                                                Toast.LENGTH_SHORT
+                                            ).show()
+                                            return@KeyboardActions
+                                        }
+                                        val intent = Intent(context, LinkInterceptorActivity::class.java).apply {
+                                            action = Intent.ACTION_VIEW
+                                            data = (if (url.startsWith("http://") || url.startsWith("https://")) url else "https://$url").toUri()
+                                        }
+                                        context.startActivity(intent)
+                                    }
+                                )
+                            )
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Button(
+                                onClick = {
+                                    if (!isProtectionActive) {
+                                        Toast.makeText(
+                                            context,
+                                            "Enable protection first to check links",
+                                            Toast.LENGTH_SHORT
+                                        ).show()
+                                        return@Button
+                                    }
+                                    val url = manualUrl.trim()
+                                    if (url.isEmpty()) {
+                                        Toast.makeText(
+                                            context,
+                                            "Enter a link to check first",
+                                            Toast.LENGTH_SHORT
+                                        ).show()
+                                        return@Button
+                                    }
+                                    val intent = Intent(context, LinkInterceptorActivity::class.java).apply {
+                                        action = Intent.ACTION_VIEW
+                                        data = (if (url.startsWith("http://") || url.startsWith("https://")) url else "https://$url").toUri()
+                                    }
+                                    context.startActivity(intent)
+                                },
+                                modifier = Modifier.fillMaxWidth().height(48.dp),
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = if (isProtectionActive)
+                                        MaterialTheme.colorScheme.primary
+                                    else
+                                        Color.Gray
+                                )
+                            ) {
+                                Text("Check Link", fontSize = 15.sp, fontWeight = FontWeight.Bold)
+                            }
+                        }
+                    }
                 }
 
                 Spacer(modifier = Modifier.height(32.dp))

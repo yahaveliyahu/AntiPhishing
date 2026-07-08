@@ -189,7 +189,7 @@ class LinkInterceptorActivity : ComponentActivity() {
 
     private fun runUrlPipeline(url: String, prefs: android.content.SharedPreferences) {
         lifecycleScope.launch {
-            // Step 1: Check URL against MongoDB via Flask
+            // Step 1-3: Check URL against MongoDB via Flask
             val serverResult = if (IS_LOCAL) {
                 checkLocalLists(url)
             } else {
@@ -198,29 +198,67 @@ class LinkInterceptorActivity : ComponentActivity() {
                 }
             }
 
-            // Step 2: Lexical analysis for Unknown links
+            // Steps 4-9: URL not found in MongoDB — run it through the lexical
+            // analyzer, then the ML model, using only as many steps as needed
+            // to reach a final decision.
             val finalResult: ApiClient.CheckResult =
                 if (serverResult is ApiClient.CheckResult.Unknown) {
-                    // Step 2: Lexical Analyzer
+                    // Step 4: Lexical Analyzer (zero-day check)
                     val lexical = withContext(Dispatchers.Default) {
                         LexicalAnalyzer.analyze(url)
                     }
 
-                    if (lexical.isObviouslyMalicious) {
-                        // Unambiguous signal (e.g. @ symbol, javascript: URI, data: URI).
-                        // Block immediately — no ML server call needed.
-                        ApiClient.CheckResult.Malicious(
-                            explanation = buildExplanation(lexical),
-                            source = "Lexical Analysis",
-                            confidence = 95,
-                            matchType = "lexical"
-                        )
-                    } else {
-                        // Step 3 — Send URL + lexical features to Flask ML model
-                        withContext(Dispatchers.IO) {
-                            ApiClient.scoreLexical(url, lexical.features)
+                    when {
+                        // Step 6: Lexical analyzer found unambiguous malicious signals.
+                        // The verdict is final — the ML model is only asked for a risk
+                        // percentage, not to reclassify the URL. Explanation/source stay
+                        // attributed to the lexical analyzer.
+                        lexical.isObviouslyMalicious -> {
+                            val riskPercent = withContext(Dispatchers.IO) {
+                                ApiClient.getRiskPercentage(url, lexical.features)
+                            }
+                            ApiClient.CheckResult.Malicious(
+                                explanation = buildExplanation(lexical),
+                                source = "Lexical Analysis",
+                                confidence = riskPercent,
+                                matchType = "lexical"
+                            )
+                        }
+
+                        // Step 5: Lexical analyzer found zero risk signals at all —
+                        // clear it immediately, no ML call needed.
+                        lexical.isObviouslySafe -> {
+                            ApiClient.CheckResult.Whitelisted(
+                                description = "No phishing indicators detected",
+                                category = "lexical_safe"
+                            )
+                        }
+
+                        // Steps 7-9: Lexical analyzer couldn't decide either way —
+                        // the ML model makes the final call (safe / malicious /
+                        // unable to determine).
+                        else -> {
+                            withContext(Dispatchers.IO) {
+                                ApiClient.scoreLexical(url, lexical.features)
+                            }
                         }
                     }
+
+//                    if (lexical.isObviouslyMalicious) {
+//                        // Unambiguous signal (e.g. @ symbol, javascript: URI, data: URI).
+//                        // Block immediately — no ML server call needed.
+//                        ApiClient.CheckResult.Malicious(
+//                            explanation = buildExplanation(lexical),
+//                            source = "Lexical Analysis",
+//                            confidence = 95,
+//                            matchType = "lexical"
+//                        )
+//                    } else {
+//                        // Step 3 — Send URL + lexical features to Flask ML model
+//                        withContext(Dispatchers.IO) {
+//                            ApiClient.scoreLexical(url, lexical.features)
+//                        }
+//                    }
                 } else {
                     serverResult
                 }
@@ -327,6 +365,10 @@ class LinkInterceptorActivity : ComponentActivity() {
             },
             threatType = when (result) {
                 is ApiClient.CheckResult.Malicious -> result.source
+                else -> null
+            },
+            explanation = when (result) {
+                is ApiClient.CheckResult.Malicious -> result.explanation
                 else -> null
             }
         )

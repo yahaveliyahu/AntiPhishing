@@ -110,7 +110,7 @@ class QrScannerActivity : ComponentActivity() {
         }
 
         lifecycleScope.launch {
-            // Step 1: Check against local lists (IS_LOCAL=true) or Flask server
+            // Step 1-3: Check against local lists (IS_LOCAL=true) or Flask server
             val serverResult: ApiClient.CheckResult = if (IS_LOCAL) {
                 checkLocalLists(url)
             } else {
@@ -119,31 +119,64 @@ class QrScannerActivity : ComponentActivity() {
                 }
             }
 
-            // Step 2: Lexical analysis for Unknown results
+            // Steps 4-9: URL not found in MongoDB — run it through the lexical
+            // analyzer, then the ML model, using only as many steps as needed
+            // to reach a final decision. Identical logic to LinkInterceptorActivity.
             val finalResult: ApiClient.CheckResult =
                 if (serverResult is ApiClient.CheckResult.Unknown) {
                     val lexical = withContext(Dispatchers.Default) {
                         LexicalAnalyzer.analyze(url)
                     }
-                    if (lexical.isObviouslyMalicious) {
-                        ApiClient.CheckResult.Malicious(
-                            explanation = lexical.flags.take(3).joinToString("\n"),
-                            source = "Lexical Analysis",
-                            confidence = 95,
-                            matchType = "lexical"
-                        )
-                    } else {
-                        // Step 3: Forward feature vector to Flask ML server
-                        // TODO: uncomment when ML model is ready
+
+                    when {
+                        // Step 6: Lexical analyzer found unambiguous malicious signals.
+                        // The verdict is final — the ML model is only asked for a risk
+                        // percentage, not to reclassify the URL. Explanation/source stay
+                        // attributed to the lexical analyzer.
+                        lexical.isObviouslyMalicious -> {
+                            val riskPercent = withContext(Dispatchers.IO) {
+                                ApiClient.getRiskPercentage(url, lexical.features)
+                            }
+                            ApiClient.CheckResult.Malicious(
+                                explanation = lexical.flags.take(3).joinToString("\n"),
+                                source = "Lexical Analysis",
+                                confidence = riskPercent,
+                                matchType = "lexical"
+                            )
+                        }
+
+                        // Step 5: Lexical analyzer found zero risk signals at all —
+                        // clear it immediately, no ML call needed.
+                        lexical.isObviouslySafe -> {
+                            ApiClient.CheckResult.Whitelisted(
+                                description = "No phishing indicators detected",
+                                category = "lexical_safe"
+                            )
+                        }
+
+                        // Steps 7-9: Lexical analyzer couldn't decide either way —
+                        // the ML model makes the final call (safe / malicious /
+                        // unable to determine).
+                        else -> {
+                            withContext(Dispatchers.IO) {
+                                ApiClient.scoreLexical(url, lexical.features)
+                            }
+                        }
+                    }
+
+//                    if (lexical.isObviouslyMalicious) {
+//                        ApiClient.CheckResult.Malicious(
+//                            explanation = lexical.flags.take(3).joinToString("\n"),
+//                            source = "Lexical Analysis",
+//                            confidence = 95,
+//                            matchType = "lexical"
+//                        )
+//                    } else {
+//                        // Step 3: Forward feature vector to Flask ML server
 //                        withContext(Dispatchers.IO) {
 //                            ApiClient.scoreLexical(url, lexical.features)
 //                        }
-                        val riskScore = lexical.features["lexical_risk_score"] ?: 0
-                        ApiClient.CheckResult.Unknown(
-                            "Lexical analysis complete (score: $riskScore). " +
-                                    "Step 3 ML model not built yet — cannot make final decision."
-                        )
-                    }
+//                    }
                 } else {
                     serverResult
                 }
@@ -212,6 +245,12 @@ class QrScannerActivity : ComponentActivity() {
             },
             threatType = when (result) {
                 is ApiClient.CheckResult.Malicious   -> result.source
+                is ApiClient.CheckResult.Whitelisted,
+                is ApiClient.CheckResult.Unknown,
+                is ApiClient.CheckResult.Error       -> null
+            },
+            explanation = when (result) {
+                is ApiClient.CheckResult.Malicious   -> result.explanation
                 is ApiClient.CheckResult.Whitelisted,
                 is ApiClient.CheckResult.Unknown,
                 is ApiClient.CheckResult.Error       -> null

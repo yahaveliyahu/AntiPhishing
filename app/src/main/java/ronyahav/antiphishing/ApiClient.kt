@@ -30,8 +30,8 @@ object ApiClient {
 
 //    private const val BASE_URL = "http://10.0.2.2:5000"
 //    private const val BASE_URL = "https://clutter-showplace-festival.ngrok-free.app"
-    private const val BASE_URL = "http://10.100.102.6:5000"
-//    private const val BASE_URL = "http://192.168.222.226:5000"
+//    private const val BASE_URL = "http://10.100.102.6:5000"
+    private const val BASE_URL = "https://antiphishing-server.onrender.com"
     private const val TIMEOUT_MS = 10_000
 
     // ── Result types ──────────────────────────────────────────────────────────
@@ -186,16 +186,10 @@ object ApiClient {
      * Step 3 — Sends the URL and its lexical feature vector to the Flask ML
      * model for final classification.
      *
-     * The call site is already written and commented out in LinkInterceptorActivity
-     * and QrScannerActivity. Uncomment it there when the ML server is ready.
-     *
-     * Called from LinkInterceptorActivity and QrScannerActivity after
+     * ACTIVE — called from LinkInterceptorActivity and QrScannerActivity after
      * LexicalAnalyzer runs and isObviouslyMalicious is false — i.e. when the
      * lexical analyzer could not make a definitive decision on its own.
-     *
-     * NOT YET ACTIVE — the Flask /api/score endpoint and the ML model have not
-     * been built yet. This function is wired and ready; implement the server
-     * side and remove the TODO comment in the callers to activate Step 3.
+     * The Flask /api/score endpoint is implemented on the server.
      *
      * Must be called from a background thread (Dispatchers.IO).
      */
@@ -238,6 +232,55 @@ object ApiClient {
         }
     }
 
+    /**
+     * Step 6 helper — hits the same /api/score endpoint as [scoreLexical], but
+     * used when the lexical analyzer has already determined the URL is
+     * malicious on its own. In that case the ML model's only job is to supply
+     * a risk percentage — it does not get to reclassify the URL — so only the
+     * numeric confidence is extracted here rather than a full [CheckResult].
+     *
+     * Falls back to 95 if the ML server can't be reached, matching the
+     * lexical analyzer's own prior confidence in an obvious-killer match.
+     *
+     * Must be called from a background thread (Dispatchers.IO).
+     */
+
+    fun getRiskPercentage(url: String, features: Map<String, Number>): Int {
+        return try {
+            val connection = URL("$BASE_URL/api/score")
+                .openConnection() as HttpURLConnection
+
+            connection.apply {
+                requestMethod = "POST"
+                connectTimeout = TIMEOUT_MS
+                readTimeout = TIMEOUT_MS
+                doOutput = true
+                setRequestProperty("Content-Type", "application/json")
+                setRequestProperty("Accept", "application/json")
+            }
+
+            val featuresJson = JSONObject()
+            features.forEach { (k, v) -> featuresJson.put(k, v) }
+
+            val body = JSONObject()
+                .put("url", url)
+                .put("features", featuresJson)
+                .toString()
+
+            OutputStreamWriter(connection.outputStream).use { it.write(body) }
+
+            val responseCode = connection.responseCode
+            if (responseCode != HttpURLConnection.HTTP_OK) return 95
+
+            val responseText = connection.inputStream.bufferedReader().readText()
+            connection.disconnect()
+            JSONObject(responseText).optInt("confidence", 95)
+
+        } catch (e: Exception) {
+            95
+        }
+    }
+
     // ── Private helpers ───────────────────────────────────────────────────────
 
     private fun parseResponse(json: String): CheckResult {
@@ -257,6 +300,22 @@ object ApiClient {
             isMalicious ->
                 CheckResult.Malicious(explanation, source, confidence, matchType)
 
+            // ML model actively confirmed this URL is safe (Step 8) — this is
+            // the ONLY non-malicious case that means "confirmed safe".
+            matchType == "ml_model" ->
+                CheckResult.Whitelisted(
+                    description = description.ifEmpty { "No phishing indicators detected" },
+                    category = category.ifEmpty { "ml_verified_safe" }
+                )
+
+//            !isMalicious && matchType.isNotEmpty() ->
+//                CheckResult.Whitelisted(description, category)
+
+
+            // Covers "unknown" (not found in MongoDB — must still go through
+            // the lexical analyzer / ML model) and "ml_unavailable" / "ml_error"
+            // (ML couldn't decide — shows the Unable to Determine screen).
+            // None of these mean "confirmed safe".
             else ->
                 CheckResult.Unknown(explanation)
         }
