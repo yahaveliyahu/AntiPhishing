@@ -30,8 +30,9 @@ object ApiClient {
 
 //    private const val BASE_URL = "http://10.0.2.2:5000"
 //    private const val BASE_URL = "https://clutter-showplace-festival.ngrok-free.app"
-//    private const val BASE_URL = "http://10.100.102.6:5000"
-    private const val BASE_URL = "https://antiphishing-server.onrender.com"
+    private const val BASE_URL = "http://10.0.0.23:5000"
+//    private const val BASE_URL = "http://10.0.0.17:5000"
+//    private const val BASE_URL = "https://antiphishing-server.onrender.com"
     private const val TIMEOUT_MS = 10_000
 
     // ── Result types ──────────────────────────────────────────────────────────
@@ -61,6 +62,32 @@ object ApiClient {
         data class Error(
             val message: String
         ) : CheckResult()
+
+        companion object {
+            /**
+             * The ONLY sanctioned way to construct a malicious verdict.
+             *
+             * Policy: a malicious verdict must always be backed by a real,
+             * specific, non-blank explanation. If no genuine reason can be
+             * given — the claim can't be substantiated — this returns
+             * Whitelisted instead.
+             */
+            fun maliciousOrSafe(
+                explanation: String,
+                source: String?,
+                confidence: Int,
+                matchType: String
+            ): CheckResult {
+                return if (explanation.isNotBlank()) {
+                    Malicious(explanation, source, confidence, matchType)
+                } else {
+                    Whitelisted(
+                        description = "No specific phishing indicators found",
+                        category = "unsubstantiated_verdict_treated_safe"
+                    )
+                }
+            }
+        }
     }
 
     // ── Public API ────────────────────────────────────────────────────────────
@@ -82,7 +109,6 @@ object ApiClient {
                 doOutput = true
                 setRequestProperty("Content-Type", "application/json")
                 setRequestProperty("Accept", "application/json")
-//                setRequestProperty("ngrok-skip-browser-warning", "true")
             }
 
             val body = JSONObject().put("url", url).toString()

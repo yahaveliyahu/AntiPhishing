@@ -137,7 +137,7 @@ class QrScannerActivity : ComponentActivity() {
                             val riskPercent = withContext(Dispatchers.IO) {
                                 ApiClient.getRiskPercentage(url, lexical.features)
                             }
-                            ApiClient.CheckResult.Malicious(
+                            ApiClient.CheckResult.maliciousOrSafe(
                                 explanation = lexical.flags.take(3).joinToString("\n"),
                                 source = "Lexical Analysis",
                                 confidence = riskPercent,
@@ -163,20 +163,6 @@ class QrScannerActivity : ComponentActivity() {
                             }
                         }
                     }
-
-//                    if (lexical.isObviouslyMalicious) {
-//                        ApiClient.CheckResult.Malicious(
-//                            explanation = lexical.flags.take(3).joinToString("\n"),
-//                            source = "Lexical Analysis",
-//                            confidence = 95,
-//                            matchType = "lexical"
-//                        )
-//                    } else {
-//                        // Step 3: Forward feature vector to Flask ML server
-//                        withContext(Dispatchers.IO) {
-//                            ApiClient.scoreLexical(url, lexical.features)
-//                        }
-//                    }
                 } else {
                     serverResult
                 }
@@ -221,7 +207,7 @@ class QrScannerActivity : ComponentActivity() {
                 description = result.description,
                 category = "local_whitelist"
             )
-            is LocalUrlResult.Blacklisted -> ApiClient.CheckResult.Malicious(
+            is LocalUrlResult.Blacklisted -> ApiClient.CheckResult.maliciousOrSafe(
                 explanation = result.explanation,
                 source = "Local blacklist: ${result.domain}",
                 confidence = 100,

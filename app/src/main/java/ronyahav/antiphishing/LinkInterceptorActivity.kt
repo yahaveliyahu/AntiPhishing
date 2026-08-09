@@ -217,7 +217,7 @@ class LinkInterceptorActivity : ComponentActivity() {
                             val riskPercent = withContext(Dispatchers.IO) {
                                 ApiClient.getRiskPercentage(url, lexical.features)
                             }
-                            ApiClient.CheckResult.Malicious(
+                            ApiClient.CheckResult.maliciousOrSafe(
                                 explanation = buildExplanation(lexical),
                                 source = "Lexical Analysis",
                                 confidence = riskPercent,
@@ -243,22 +243,6 @@ class LinkInterceptorActivity : ComponentActivity() {
                             }
                         }
                     }
-
-//                    if (lexical.isObviouslyMalicious) {
-//                        // Unambiguous signal (e.g. @ symbol, javascript: URI, data: URI).
-//                        // Block immediately — no ML server call needed.
-//                        ApiClient.CheckResult.Malicious(
-//                            explanation = buildExplanation(lexical),
-//                            source = "Lexical Analysis",
-//                            confidence = 95,
-//                            matchType = "lexical"
-//                        )
-//                    } else {
-//                        // Step 3 — Send URL + lexical features to Flask ML model
-//                        withContext(Dispatchers.IO) {
-//                            ApiClient.scoreLexical(url, lexical.features)
-//                        }
-//                    }
                 } else {
                     serverResult
                 }
@@ -338,7 +322,7 @@ class LinkInterceptorActivity : ComponentActivity() {
                 category = "local_whitelist"
             )
 
-            is LocalUrlResult.Blacklisted -> ApiClient.CheckResult.Malicious(
+            is LocalUrlResult.Blacklisted -> ApiClient.CheckResult.maliciousOrSafe(
                 explanation = result.explanation,
                 source = "Local blacklist: ${result.domain}",
                 confidence = 100,
